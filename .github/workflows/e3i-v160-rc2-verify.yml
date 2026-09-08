@@ -1,0 +1,40 @@
+name: E3I v160 RC2 — Source Verification
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/e3i/v160-rc2/**'
+      - '.github/workflows/e3i-v160-rc2-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/e3i/v160-rc2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.2'
+          cache: npm
+          cache-dependency-path: deploy/e3i/v160-rc2/package-lock.json
+
+      - name: Install from lockfile
+        run: npm ci --ignore-scripts --no-fund
+
+      - name: Invariant regression
+        run: npm test
+
+      - name: Dependency audit
+        run: npm audit --omit=dev
+
+      - name: JavaScript syntax
+        run: node --check app/server.js

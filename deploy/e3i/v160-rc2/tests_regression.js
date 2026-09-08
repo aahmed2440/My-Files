@@ -1,0 +1,32 @@
+const assert=require("assert"),fs=require("fs"),path=require("path");
+const C=[];const T=(n,v)=>C.push([n,!!v]);
+const server=fs.readFileSync(path.join(__dirname,"app","server.js"),"utf8");
+const docker=fs.readFileSync(path.join(__dirname,"Dockerfile"),"utf8");
+const railway=JSON.parse(fs.readFileSync(path.join(__dirname,"railway.json"),"utf8"));
+const html=fs.readFileSync(path.join(__dirname,"public","index.html"),"utf8");
+
+T("release default rc2",server.includes('process.env.E3I_RELEASE||"v160-rc2"'));
+T("no security-state route",!server.includes('req.url==="/security-state"'));
+T("no security.txt route",!server.includes('req.url==="/.well-known/security.txt"'));
+T("no remote ip log",!server.includes('remote:req.socket.remoteAddress'));
+T("query stripped in logs",server.includes('split("?",1)[0]'));
+T("rate bucket bounded",server.includes("MAX_BUCKETS=10000"));
+T("rate bucket cleanup",server.includes("pruneBuckets"));
+T("forwarded-for aware",server.includes('x-forwarded-for'));
+T("chunked body blocked",server.includes("TRANSFER_ENCODING"));
+T("invalid content-length blocked",server.includes("INVALID_CONTENT_LENGTH"));
+T("ready generic",!server.includes("failed_gates:pstate.failed"));
+T("health minimal",server.includes('JSON.stringify({status:"ok",release:rel})'));
+T("strong csp",server.includes("default-src 'none'"));
+T("hsts",server.includes("strict-transport-security"));
+T("GET HEAD only",server.includes('req.method!=="GET"&&req.method!=="HEAD"'));
+T("beta fail closed",server.includes("HOSTED_BETA_DISABLED"));
+T("DHI pinned",docker.includes("dhi.io/node:22.23.2-alpine3.24@sha256:"));
+T("DHI user 1000",docker.includes("USER 1000"));
+T("node cmd",docker.includes('CMD ["node","app/server.js"]'));
+T("one root railway config",railway.build.dockerfilePath==="Dockerfile");
+T("railway health",railway.deploy.healthcheckPath==="/health");
+T("attribution",html.includes("Designed, Engineered, and Built by: Azad Ahmed — In Mission To Solve Intelligence At Civilizational Scale."));
+
+for(const [n,v] of C)assert.equal(v,true,n);
+console.log(`${C.length}/${C.length} v160-RC2 invariant checks passed`);
