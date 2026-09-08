@@ -26,14 +26,23 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Verify committed release checksums
+      - name: Print committed artifact hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd deploy/cryptosphere-integrated
+          sha256sum cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip gateway.mjs
+
+      - name: Verify committed release manifest
+        id: manifest
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           cd deploy/cryptosphere-integrated
           sha256sum -c SHA256.txt
 
-      - name: Verify ZIP structure
+      - name: Verify ZIP structure independently
         shell: bash
         run: |
           set -euo pipefail
@@ -41,5 +50,16 @@ jobs:
           unzip -t cryptosphere-owner-runtime.zip
           unzip -t cryptosphere-core-runtime.zip
 
+      - name: Record manifest gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.manifest.outcome }}" != "success" ]; then
+            echo "CryptoSphere release manifest is stale or inconsistent with committed artifacts" >&2
+            exit 1
+          fi
+
       - name: Build checksum-enforced Docker canary
+        if: success()
         run: docker build --no-cache -t cryptosphere-integrity-canary:local .
