@@ -27,7 +27,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           persist-credentials: false
-
       - name: Verify release manifest and ZIP structure
         shell: bash
         run: |
@@ -62,7 +61,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           persist-credentials: false
-
       - name: Run E3I invariants and dependency audit
         shell: bash
         run: |
@@ -80,7 +78,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           persist-credentials: false
-
       - name: Check tracked secret hygiene
         shell: bash
         run: |
@@ -98,7 +95,6 @@ jobs:
             exit 1
           fi
           echo 'Tracked secret hygiene PASS'
-
       - name: Check repository security invariants
         shell: bash
         run: |
@@ -113,13 +109,12 @@ jobs:
 
   cryptosphere-salvage-diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - name: Checkout exact revision
         uses: actions/checkout@v5
         with:
           persist-credentials: false
-
       - name: Diagnose recoverability without modifying repository
         shell: bash
         run: |
@@ -140,8 +135,16 @@ jobs:
             out="/tmp/${file%.zip}.repaired.zip"
             log="/tmp/${file%.zip}.repair.log"
             rm -f "$out" "$log"
-            zip -FF "$file" --out "$out" >"$log" 2>&1 || true
+            set +o pipefail
+            yes y | timeout 20s zip -FF "$file" --out "$out" >"$log" 2>&1
+            repair_rc=${PIPESTATUS[1]}
+            set -o pipefail
             cat "$log"
+            echo "repair exit code: $repair_rc"
+            if [ "$repair_rc" -eq 124 ]; then
+              echo 'SALVAGE_TIMEOUT'
+              continue
+            fi
             if [ -f "$out" ] && unzip -t "$out"; then
               echo 'SALVAGE_STRUCTURAL_PASS'
               root="/tmp/${file%.zip}.recovered"
