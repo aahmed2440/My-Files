@@ -1,0 +1,85 @@
+name: E3I v160 — Public Runtime Canary
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'deploy/e3i/v160-rc2/Dockerfile.public-canary'
+      - 'deploy/e3i/v160-rc2/app/**'
+      - 'deploy/e3i/v160-rc2/public/**'
+      - 'deploy/e3i/v160-rc2/package*.json'
+      - '.github/workflows/e3i-v160-public-canary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-smoke-scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/e3i/v160-rc2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 26 compatibility runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26.8.1'
+          cache: npm
+          cache-dependency-path: deploy/e3i/v160-rc2/package-lock.json
+
+      - name: Application regression on Node 26
+        run: |
+          npm ci --ignore-scripts --no-fund
+          npm test
+          npm audit --omit=dev
+          node --check app/server.js
+
+      - name: Build public Chainguard canary
+        run: docker build -f Dockerfile.public-canary -t e3i:v160-public-canary .
+
+      - name: Container smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name e3i-public-canary -p 18080:8080 \
+            -e E3I_RELEASE=v160-public-canary \
+            -e E3I_HOSTED_BETA_ENABLED=false \
+            -e E3I_RELEASE_FREEZE=true \
+            e3i:v160-public-canary
+          trap 'docker rm -f e3i-public-canary >/dev/null 2>&1 || true' EXIT
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:18080/health >/tmp/health.json; then break; fi
+            sleep 1
+          done
+          grep -q 'v160-public-canary' /tmp/health.json
+          READY_CODE="$(curl -sS -o /tmp/ready.json -w '%{http_code}' http://127.0.0.1:18080/ready)"
+          BETA_CODE="$(curl -sS -o /tmp/beta.json -w '%{http_code}' http://127.0.0.1:18080/beta)"
+          test "$READY_CODE" = '503'
+          test "$BETA_CODE" = '403'
+          grep -q 'HOSTED_BETA_DISABLED' /tmp/beta.json
+
+      - name: HIGH/CRITICAL container policy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: 'e3i:v160-public-canary'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Canary summary
+        run: |
+          {
+            echo '## E3I public-runtime canary'
+            echo '- Node 26 compatibility: PASS'
+            echo '- Container build: PASS'
+            echo '- /health: 200'
+            echo '- /ready: 503 (fail-closed)'
+            echo '- /beta: 403 (hosted beta disabled)'
+            echo '- HIGH/CRITICAL Trivy policy: PASS'
+            echo '- Production promotion: NOT performed'
+          } >> "$GITHUB_STEP_SUMMARY"
