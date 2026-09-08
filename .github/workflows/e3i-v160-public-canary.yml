@@ -13,9 +13,15 @@ on:
 
 permissions:
   contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/e3i
 
 jobs:
-  build-smoke-scan:
+  build-smoke-scan-publish:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -71,6 +77,36 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish verified image
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA_TAG="v160-public-canary-${GITHUB_SHA}"
+          docker tag e3i:v160-public-canary "${IMAGE}:${SHA_TAG}"
+          docker tag e3i:v160-public-canary "${IMAGE}:v160-public-canary"
+          docker push "${IMAGE}:${SHA_TAG}"
+          docker push "${IMAGE}:v160-public-canary"
+          DIGEST="$(docker buildx imagetools inspect "${IMAGE}:${SHA_TAG}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          test -n "$DIGEST"
+          echo "sha_tag=${SHA_TAG}" >> "$GITHUB_OUTPUT"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Published ${IMAGE}:${SHA_TAG}@${DIGEST}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
       - name: Canary summary
         run: |
           {
@@ -81,5 +117,8 @@ jobs:
             echo '- /ready: 503 (fail-closed)'
             echo '- /beta: 403 (hosted beta disabled)'
             echo '- HIGH/CRITICAL Trivy policy: PASS'
+            echo "- GHCR image: \`${IMAGE}:${{ steps.publish.outputs.sha_tag }}\`"
+            echo "- Digest: \`${{ steps.publish.outputs.digest }}\`"
+            echo '- Provenance attestation: generated'
             echo '- Production promotion: NOT performed'
           } >> "$GITHUB_STEP_SUMMARY"
