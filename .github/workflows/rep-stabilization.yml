@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: rep-stabilization-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   cryptosphere-integrity:
