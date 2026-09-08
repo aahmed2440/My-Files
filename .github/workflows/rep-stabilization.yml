@@ -19,23 +19,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  integrity-security:
+  cryptosphere-integrity:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout exact revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
-      - name: CryptoSphere artifact integrity
+      - name: Verify release manifest and ZIP structure
         shell: bash
         run: |
           set -euo pipefail
           cd deploy/cryptosphere-integrated
           echo 'Observed SHA-256 values:'
           sha256sum cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip gateway.mjs
-          echo 'Manifest verification:'
           sha256sum -c SHA256.txt
           python3 - <<'PY'
           from pathlib import Path
@@ -55,7 +54,16 @@ jobs:
           PY
           node --check gateway.mjs
 
-      - name: E3I regression and dependency gate
+  e3i-regression-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Run E3I invariants and dependency audit
         shell: bash
         run: |
           set -euo pipefail
@@ -64,7 +72,16 @@ jobs:
           npm test
           npm audit --omit=dev --audit-level=high
 
-      - name: Tracked secret hygiene
+  repository-security-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Check tracked secret hygiene
         shell: bash
         run: |
           set -euo pipefail
@@ -82,7 +99,7 @@ jobs:
           fi
           echo 'Tracked secret hygiene PASS'
 
-      - name: Repository hygiene invariants
+      - name: Check repository security invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -90,6 +107,8 @@ jobs:
           test -f .gitignore
           grep -Eq '(^|/)\.env' .gitignore
           grep -Eq '\*\.pem|\.pem' .gitignore
+          grep -Eq '\*\.key|\.key' .gitignore
+          grep -Eq '\*\.p12|\.p12' .gitignore
           echo 'Repository hygiene PASS'
 
   cryptosphere-salvage-diagnostic:
@@ -97,7 +116,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout exact revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
