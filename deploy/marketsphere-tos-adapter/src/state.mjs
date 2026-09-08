@@ -8,7 +8,7 @@ export class FeedState {
     this.startedAt = nowIso();
     this.source = 'SCHWAB_TOS';
     this.provider = 'Charles Schwab Trader API';
-    this.adapterVersion = '0.1.0';
+    this.adapterVersion = '0.1.2';
     this.tradingAuthority = 'NONE';
     this.productionMutation = false;
     this.symbolsConfigured = [...symbols];
