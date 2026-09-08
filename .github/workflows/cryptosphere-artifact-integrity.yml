@@ -8,6 +8,11 @@ on:
       - "Dockerfile"
       - "deploy/cryptosphere-integrated/**"
       - ".github/workflows/cryptosphere-artifact-integrity.yml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "deploy/cryptosphere-integrated/**"
+      - ".github/workflows/cryptosphere-artifact-integrity.yml"
   workflow_dispatch:
 
 permissions:
