@@ -1,0 +1,40 @@
+name: CryptoSphere Artifact Integrity Canary
+
+on:
+  push:
+    branches:
+      - "cryptosphere/docker-canary-2026-09-07"
+    paths:
+      - "Dockerfile"
+      - "deploy/cryptosphere-integrated/**"
+      - ".github/workflows/cryptosphere-artifact-integrity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-release-bytes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify committed release checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd deploy/cryptosphere-integrated
+          sha256sum -c SHA256.txt
+
+      - name: Verify ZIP structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd deploy/cryptosphere-integrated
+          unzip -t cryptosphere-owner-runtime.zip
+          unzip -t cryptosphere-core-runtime.zip
+
+      - name: Build checksum-enforced Docker canary
+        run: docker build --no-cache -t cryptosphere-integrity-canary:local .
