@@ -1,0 +1,6 @@
+CryptoSphere integrated production cutover trigger
+Owner Console: 1.4.1
+Core: 0.90.1
+Aggregate health gate: /health
+Production execution: disabled
+Human governance: required
