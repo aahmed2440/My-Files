@@ -1,0 +1,38 @@
+name: E3I v160 RC2 — Railway Smoke Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Railway canary or cutover URL, e.g. https://...up.railway.app'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail-closed smoke checks
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_URL="${BASE_URL%/}"
+          HEALTH_CODE="$(curl -sS -o /tmp/health.json -w '%{http_code}' "${BASE_URL}/health")"
+          READY_CODE="$(curl -sS -o /tmp/ready.json -w '%{http_code}' "${BASE_URL}/ready")"
+          VERSION_CODE="$(curl -sS -o /tmp/version.json -w '%{http_code}' "${BASE_URL}/version")"
+          BETA_CODE="$(curl -sS -o /tmp/beta.json -w '%{http_code}' "${BASE_URL}/beta")"
+          test "$HEALTH_CODE" = '200'
+          test "$READY_CODE" = '503'
+          test "$VERSION_CODE" = '200'
+          test "$BETA_CODE" = '403'
+          grep -q 'v160-rc2' /tmp/health.json
+          grep -q 'v160-rc2' /tmp/version.json
+          grep -q 'HOSTED_BETA_DISABLED' /tmp/beta.json
+          echo 'E3I v160 RC2 smoke verification PASS'
+          cat /tmp/health.json
+          cat /tmp/ready.json
