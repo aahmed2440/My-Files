@@ -91,3 +91,51 @@ jobs:
           grep -Eq '(^|/)\.env' .gitignore
           grep -Eq '\*\.pem|\.pem' .gitignore
           echo 'Repository hygiene PASS'
+
+  cryptosphere-salvage-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Diagnose recoverability without modifying repository
+        shell: bash
+        run: |
+          set -u
+          cd deploy/cryptosphere-integrated
+          command -v zip >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq zip; }
+          for file in cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip; do
+            echo "===== $file ====="
+            if python3 - "$file" <<'PY'
+          import sys, zipfile
+          raise SystemExit(0 if zipfile.is_zipfile(sys.argv[1]) else 1)
+          PY
+            then
+              echo 'Archive is already structurally valid.'
+              unzip -t "$file" || true
+              continue
+            fi
+            out="/tmp/${file%.zip}.repaired.zip"
+            log="/tmp/${file%.zip}.repair.log"
+            rm -f "$out" "$log"
+            zip -FF "$file" --out "$out" >"$log" 2>&1 || true
+            cat "$log"
+            if [ -f "$out" ] && unzip -t "$out"; then
+              echo 'SALVAGE_STRUCTURAL_PASS'
+              root="/tmp/${file%.zip}.recovered"
+              rm -rf "$root" && mkdir -p "$root"
+              unzip -q "$out" -d "$root"
+              echo 'Recovered inventory:'
+              find "$root" -type f -printf '%P\n' | LC_ALL=C sort
+              echo "Recovered file count: $(find "$root" -type f | wc -l)"
+              if [ -f "$root/RELEASE_MANIFEST.json" ]; then
+                echo 'Recovered RELEASE_MANIFEST.json:'
+                python3 -m json.tool "$root/RELEASE_MANIFEST.json" || cat "$root/RELEASE_MANIFEST.json"
+              fi
+            else
+              echo 'SALVAGE_STRUCTURAL_FAIL'
+            fi
+          done
