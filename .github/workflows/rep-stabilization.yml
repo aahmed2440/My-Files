@@ -1,0 +1,93 @@
+name: REP Stabilization Gate
+
+on:
+  push:
+    branches:
+      - rep/stabilization-2026-09-08
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/rep-stabilization.yml'
+      - '.gitignore'
+      - 'SECURITY.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rep-stabilization-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  integrity-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: CryptoSphere artifact integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd deploy/cryptosphere-integrated
+          echo 'Observed SHA-256 values:'
+          sha256sum cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip gateway.mjs
+          echo 'Manifest verification:'
+          sha256sum -c SHA256.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          for name in ('cryptosphere-owner-runtime.zip','cryptosphere-core-runtime.zip'):
+              p=Path(name)
+              assert p.read_bytes()[:4] == b'PK\x03\x04', f'{name}: invalid ZIP magic'
+              assert zipfile.is_zipfile(p), f'{name}: zipfile validation failed'
+              with zipfile.ZipFile(p) as z:
+                  bad=z.testzip()
+                  assert bad is None, f'{name}: corrupt member {bad}'
+                  for member in z.infolist():
+                      target=Path(member.filename)
+                      assert not target.is_absolute(), f'{name}: absolute archive path {member.filename}'
+                      assert '..' not in target.parts, f'{name}: traversal archive path {member.filename}'
+              print(f'{name}: ZIP structure PASS')
+          PY
+          node --check gateway.mjs
+
+      - name: E3I regression and dependency gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd deploy/e3i/v160-rc2
+          npm ci --ignore-scripts
+          npm test
+          npm audit --omit=dev --audit-level=high
+
+      - name: Tracked secret hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -Eq '(^|/)(\.env($|\.)|id_rsa($|\.)|id_ed25519($|\.)|.*\.(pem|p12|pfx|key)$)'; then
+            echo 'Potential secret-bearing filename is tracked:'
+            git ls-files | grep -E '(^|/)(\.env($|\.)|id_rsa($|\.)|id_ed25519($|\.)|.*\.(pem|p12|pfx|key)$)' | sed 's/^/ - /'
+            exit 1
+          fi
+          pattern='-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}'
+          matches=$(git grep -IlE -- "$pattern" -- ':!*.zip' ':!*.png' ':!*.jpg' ':!*.jpeg' ':!*.gif' || true)
+          if [ -n "$matches" ]; then
+            echo 'Potential embedded credential signature found in:'
+            printf '%s\n' "$matches" | sed 's/^/ - /'
+            exit 1
+          fi
+          echo 'Tracked secret hygiene PASS'
+
+      - name: Repository hygiene invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f SECURITY.md
+          test -f .gitignore
+          grep -Eq '(^|/)\.env' .gitignore
+          grep -Eq '\*\.pem|\.pem' .gitignore
+          echo 'Repository hygiene PASS'
