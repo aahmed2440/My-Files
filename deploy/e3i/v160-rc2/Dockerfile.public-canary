@@ -1,0 +1,12 @@
+FROM cgr.dev/chainguard/node:latest
+
+WORKDIR /app
+COPY --chown=65532:65532 app ./app
+COPY --chown=65532:65532 public ./public
+COPY --chown=65532:65532 package.json ./package.json
+
+USER 65532
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/bin/node"]
+CMD ["app/server.js"]
