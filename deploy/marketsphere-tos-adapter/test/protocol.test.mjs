@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SchwabTosAdapter } from '../src/adapter.mjs';
+import { SchwabTosAdapter, validateStreamerUrl, readJsonBounded } from '../src/adapter.mjs';
 
 test('login ack triggers subscription and data produces live proof', () => {
   const a = new SchwabTosAdapter();
@@ -26,4 +26,49 @@ test('login nack fails closed', () => {
   a.onMessage(JSON.stringify({response:[{service:'ADMIN',command:'LOGIN',content:{code:3}}]}), info);
   assert.equal(a.state.auth, 'LOGIN_REJECTED');
   assert.equal(a.state.lastErrorCode, 'LOGIN_CODE_3');
+});
+
+test('streamer URL requires explicit trusted wss host', () => {
+  assert.throws(
+    () => validateStreamerUrl('wss://stream.vendor.example/ws', []),
+    /STREAMER_HOST_ALLOWLIST_REQUIRED/
+  );
+  assert.throws(
+    () => validateStreamerUrl('ws://stream.vendor.example/ws', ['vendor.example']),
+    /STREAMER_URL_PROTOCOL_REJECTED/
+  );
+  assert.throws(
+    () => validateStreamerUrl('wss://user:pass@stream.vendor.example/ws', ['vendor.example']),
+    /STREAMER_URL_CREDENTIALS_REJECTED/
+  );
+  assert.throws(
+    () => validateStreamerUrl('wss://stream.vendor.example:8443/ws', ['vendor.example']),
+    /STREAMER_URL_PORT_REJECTED/
+  );
+  assert.throws(
+    () => validateStreamerUrl('wss://evil.example/ws', ['vendor.example']),
+    /STREAMER_HOST_REJECTED/
+  );
+  assert.throws(
+    () => validateStreamerUrl('wss://notvendor.example/ws', ['vendor.example']),
+    /STREAMER_HOST_REJECTED/
+  );
+  const accepted = new URL(validateStreamerUrl('wss://stream.vendor.example/ws', ['vendor.example']));
+  assert.equal(accepted.protocol, 'wss:');
+  assert.equal(accepted.hostname, 'stream.vendor.example');
+});
+
+test('preference response parser enforces byte budget', async () => {
+  const body = {streamerInfo:[{streamerSocketUrl:'wss://stream.vendor.example/ws'}]};
+  const parsed = await readJsonBounded(new Response(JSON.stringify(body)), 4096);
+  assert.equal(parsed.streamerInfo[0].streamerSocketUrl, body.streamerInfo[0].streamerSocketUrl);
+
+  await assert.rejects(
+    () => readJsonBounded(new Response(JSON.stringify({payload:'x'.repeat(4096)})), 1024),
+    /PREFERENCE_RESPONSE_TOO_LARGE/
+  );
+  await assert.rejects(
+    () => readJsonBounded(new Response('{not-json}'), 4096),
+    /PREFERENCE_RESPONSE_INVALID_JSON/
+  );
 });
