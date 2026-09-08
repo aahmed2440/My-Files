@@ -1,4 +1,4 @@
-FROM cgr.dev/chainguard/node:latest
+FROM cgr.dev/chainguard/node:latest@sha256:198c07af382e29f21e4f50b39921644599ee5d12bb92397bf7fb624a7a39801b
 
 WORKDIR /app
 COPY --chown=65532:65532 app ./app
