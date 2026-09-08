@@ -1,6 +1,7 @@
 import { FeedState } from './state.mjs';
 
 const PREF_URL = 'https://api.schwabapi.com/trader/v1/userPreference';
+const DEFAULT_PREF_RESPONSE_MAX_BYTES = 512 * 1024;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function envList(name, fallback = '') {
@@ -9,6 +10,67 @@ function envList(name, fallback = '') {
 function isEnabled() { return /^true$/i.test(process.env.SCHWAB_TOS_ENABLED ?? 'false'); }
 function accessToken() { return (process.env.SCHWAB_ACCESS_TOKEN ?? '').trim(); }
 function requestIdFactory() { let n = 0; return () => String(++n); }
+function fail(code) { const e = new Error(code); e.code = code; return e; }
+function normalizeHost(value) { return String(value ?? '').trim().toLowerCase().replace(/^\.+|\.+$/g, ''); }
+function streamHostAllowlist() { return envList('SCHWAB_STREAM_HOST_ALLOWLIST').map(normalizeHost).filter(Boolean); }
+function preferenceResponseMaxBytes() {
+  const raw = Number(process.env.SCHWAB_PREF_RESPONSE_MAX_BYTES ?? DEFAULT_PREF_RESPONSE_MAX_BYTES);
+  if (!Number.isFinite(raw)) return DEFAULT_PREF_RESPONSE_MAX_BYTES;
+  return Math.max(16 * 1024, Math.min(2 * 1024 * 1024, Math.floor(raw)));
+}
+
+export function validateStreamerUrl(raw, allowedHosts = streamHostAllowlist()) {
+  let url;
+  try { url = new URL(String(raw ?? '')); }
+  catch { throw fail('STREAMER_URL_INVALID'); }
+  if (url.protocol !== 'wss:') throw fail('STREAMER_URL_PROTOCOL_REJECTED');
+  if (url.username || url.password) throw fail('STREAMER_URL_CREDENTIALS_REJECTED');
+  if (url.port && url.port !== '443') throw fail('STREAMER_URL_PORT_REJECTED');
+
+  const host = normalizeHost(url.hostname);
+  const allow = allowedHosts.map(normalizeHost).filter(Boolean);
+  if (!allow.length) throw fail('STREAMER_HOST_ALLOWLIST_REQUIRED');
+  const trusted = allow.some(entry => host === entry || host.endsWith(`.${entry}`));
+  if (!trusted) throw fail('STREAMER_HOST_REJECTED');
+  return url.toString();
+}
+
+export async function readJsonBounded(response, maxBytes = preferenceResponseMaxBytes()) {
+  const declared = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) throw fail('PREFERENCE_RESPONSE_TOO_LARGE');
+
+  if (!response.body?.getReader) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) throw fail('PREFERENCE_RESPONSE_TOO_LARGE');
+    try { return JSON.parse(text); }
+    catch { throw fail('PREFERENCE_RESPONSE_INVALID_JSON'); }
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      total += chunk.length;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch {}
+        throw fail('PREFERENCE_RESPONSE_TOO_LARGE');
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+
+  try { return JSON.parse(Buffer.concat(chunks, total).toString('utf8')); }
+  catch (err) {
+    if (err?.code === 'PREFERENCE_RESPONSE_TOO_LARGE') throw err;
+    throw fail('PREFERENCE_RESPONSE_INVALID_JSON');
+  }
+}
 
 export class SchwabTosAdapter {
   constructor() {
@@ -25,6 +87,7 @@ export class SchwabTosAdapter {
   async start() {
     if (!isEnabled()) { this.state.setMode('DISABLED'); this.state.setAuth('NOT_CONFIGURED'); return; }
     if (!accessToken()) { this.state.setMode('AUTH_REQUIRED'); this.state.setAuth('MISSING_ACCESS_TOKEN'); return; }
+    if (!streamHostAllowlist().length) { this.state.setMode('AUTH_REQUIRED'); this.state.setAuth('STREAM_HOST_ALLOWLIST_REQUIRED'); return; }
     this.loop().catch(() => this.state.recordError('ADAPTER_LOOP_FAILED'));
   }
   async loop() {
@@ -40,23 +103,24 @@ export class SchwabTosAdapter {
   async getStreamerInfo() {
     this.state.setMode('AUTHENTICATING');
     const response = await fetch(PREF_URL, { method:'GET', headers:{ accept:'application/json', authorization:`Bearer ${accessToken()}` }, signal:AbortSignal.timeout(10000) });
-    if (response.status === 401 || response.status === 403) { this.state.setAuth('TOKEN_REJECTED'); const e = new Error('AUTH_REJECTED'); e.code='AUTH_REJECTED'; throw e; }
-    if (!response.ok) { const e = new Error('PREFERENCE_HTTP_ERROR'); e.code=`PREFERENCE_HTTP_${response.status}`; throw e; }
-    const body = await response.json();
+    if (response.status === 401 || response.status === 403) { this.state.setAuth('TOKEN_REJECTED'); throw fail('AUTH_REJECTED'); }
+    if (!response.ok) throw fail(`PREFERENCE_HTTP_${response.status}`);
+    const body = await readJsonBounded(response);
     const info = Array.isArray(body?.streamerInfo) ? body.streamerInfo[0] : null;
-    if (!info?.streamerSocketUrl || !info?.schwabClientCustomerId || !info?.schwabClientCorrelId) { const e = new Error('STREAMER_INFO_INCOMPLETE'); e.code='STREAMER_INFO_INCOMPLETE'; throw e; }
+    if (!info?.streamerSocketUrl || !info?.schwabClientCustomerId || !info?.schwabClientCorrelId) throw fail('STREAMER_INFO_INCOMPLETE');
+    const streamerSocketUrl = validateStreamerUrl(info.streamerSocketUrl);
     this.state.setAuth('VERIFIED');
-    return info;
+    return { ...info, streamerSocketUrl };
   }
   async connectOnce() {
     const info = await this.getStreamerInfo(); this.state.setMode('CONNECTING'); this.state.setSocket('CONNECTING');
     return new Promise((resolve, reject) => {
       let settled = false;
       const ws = new WebSocket(info.streamerSocketUrl); this.ws = ws;
-      const fail = (code) => { if (!settled) { settled = true; const e = new Error(code); e.code = code; reject(e); } };
+      const failConnection = (code) => { if (!settled) { settled = true; reject(fail(code)); } };
       ws.addEventListener('open', () => { this.state.setSocket('CONNECTED'); this.sendLogin(info); });
       ws.addEventListener('message', (event) => this.onMessage(event.data, info));
-      ws.addEventListener('error', () => fail('WEBSOCKET_ERROR'));
+      ws.addEventListener('error', () => failConnection('WEBSOCKET_ERROR'));
       ws.addEventListener('close', () => { this.state.setSocket('DISCONNECTED'); this.state.setSubscription('NOT_SUBSCRIBED'); this.state.setMode('DISCONNECTED'); if (!settled) { settled = true; resolve(); } });
     });
   }
