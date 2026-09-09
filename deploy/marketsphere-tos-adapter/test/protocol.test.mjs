@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SchwabTosAdapter, validateStreamerUrl, readJsonBounded } from '../src/adapter.mjs';
+import { CredentialGuard } from '../src/credential_guard.mjs';
+
+const validGuard = () => new CredentialGuard({ env: {
+  SCHWAB_ACCESS_TOKEN: 'TEST_ONLY_NOT_A_REAL_TOKEN',
+  SCHWAB_ACCESS_TOKEN_EXPIRES_AT: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+  SCHWAB_TOKEN_EXPIRY_SAFETY_MARGIN_MS: '120000'
+} });
+const adapter = () => new SchwabTosAdapter({ credentialGuard: validGuard() });
 
 test('subscription ack cannot become LIVE and empirical gates remain fail-closed', () => {
-  const a = new SchwabTosAdapter();
+  const a = adapter();
   const sent = [];
   a.send = (x) => { sent.push(x); return true; };
   a.state.setSocket('CONNECTED');
@@ -40,7 +48,7 @@ test('subscription ack cannot become LIVE and empirical gates remain fail-closed
 });
 
 test('delayed payload cannot satisfy real-time state', () => {
-  const a = new SchwabTosAdapter();
+  const a = adapter();
   a.state.setAuth('VERIFIED');
   a.state.setSocket('CONNECTED');
   a.state.setSubscription('ACK');
@@ -52,7 +60,7 @@ test('delayed payload cannot satisfy real-time state', () => {
 });
 
 test('candidate proof is versioned and exposes sanitized timestamps and transport state', () => {
-  const a = new SchwabTosAdapter();
+  const a = adapter();
   a.state.setAuth('VERIFIED');
   a.state.setSocket('CONNECTED');
   a.state.setSubscription('ACK');
@@ -74,7 +82,7 @@ test('candidate proof is versioned and exposes sanitized timestamps and transpor
 });
 
 test('login nack fails closed', () => {
-  const a = new SchwabTosAdapter();
+  const a = adapter();
   const info = {};
   a.onMessage(JSON.stringify({response:[{service:'ADMIN',command:'LOGIN',content:{code:3}}]}), info);
   assert.equal(a.state.auth, 'LOGIN_REJECTED');
