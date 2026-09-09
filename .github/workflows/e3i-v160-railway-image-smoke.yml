@@ -1,0 +1,49 @@
+name: E3I v160 — Railway Exact-Image Smoke
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/e3i-v160-railway-image-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify exact-image Railway canary
+        shell: bash
+        env:
+          BASE_URL: https://e3i-v160-image-canary-production.up.railway.app
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+
+          health_code="$(curl -sS -D /tmp/health.h -o /tmp/health.json -w '%{http_code}' "$base/health")"
+          ready_code="$(curl -sS -D /tmp/ready.h -o /tmp/ready.json -w '%{http_code}' "$base/ready")"
+          beta_code="$(curl -sS -D /tmp/beta.h -o /tmp/beta.json -w '%{http_code}' "$base/beta")"
+          version_code="$(curl -sS -D /tmp/version.h -o /tmp/version.json -w '%{http_code}' "$base/version")"
+
+          test "$health_code" = '200'
+          test "$ready_code" = '503'
+          test "$beta_code" = '403'
+          test "$version_code" = '200'
+
+          grep -q 'v160-public-canary' /tmp/health.json
+          grep -q 'v160-public-canary' /tmp/version.json
+          grep -q 'HOSTED_BETA_DISABLED' /tmp/beta.json
+          grep -qi '^strict-transport-security: max-age=31536000' /tmp/health.h
+          grep -qi "^content-security-policy: default-src 'none'" /tmp/health.h
+          grep -qi '^x-content-type-options: nosniff' /tmp/health.h
+          grep -qi '^cache-control: no-store' /tmp/health.h
+
+          echo "health=$health_code"
+          echo "ready=$ready_code"
+          echo "beta=$beta_code"
+          echo "version=$version_code"
+          cat /tmp/health.json
+          cat /tmp/ready.json
+          cat /tmp/version.json
