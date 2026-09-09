@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FeedState } from '../src/state.mjs';
 import { SchwabTosAdapter } from '../src/adapter.mjs';
+import { CredentialGuard } from '../src/credential_guard.mjs';
+
+const validGuard = () => new CredentialGuard({ env: {
+  SCHWAB_ACCESS_TOKEN: 'TEST_ONLY_NOT_A_REAL_TOKEN',
+  SCHWAB_ACCESS_TOKEN_EXPIRES_AT: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+  SCHWAB_TOKEN_EXPIRY_SAFETY_MARGIN_MS: '120000'
+} });
 
 test('payload proof hashes canonical market content and forms a tamper-evident chain', () => {
   const s = new FeedState();
@@ -53,18 +60,20 @@ test('duplicate payload evidence is counted without retaining raw payload in pro
 
 test('adapter rejects oversized streaming frames before parsing', () => {
   process.env.SCHWAB_MAX_FRAME_BYTES = String(64 * 1024);
-  const a = new SchwabTosAdapter();
-  a.onMessage('x'.repeat(70 * 1024), {});
+  const a = new SchwabTosAdapter({ credentialGuard: validGuard() });
+  const accepted = a.onMessage('x'.repeat(70 * 1024), {});
+  assert.equal(accepted, false);
   assert.equal(a.state.lastErrorCode, 'STREAM_FRAME_TOO_LARGE');
 });
 
 test('adapter maps provider sequence evidence when a sequence field is present', () => {
-  const a = new SchwabTosAdapter();
+  const a = new SchwabTosAdapter({ credentialGuard: validGuard() });
   const now = Date.now();
-  a.onMessage(JSON.stringify({data:[
+  const accepted = a.onMessage(JSON.stringify({data:[
     {service:'LEVELONE_EQUITIES',timestamp:now,sequence:7,content:[{key:'SPY',delayed:false}]},
     {service:'LEVELONE_EQUITIES',timestamp:now+1,sequence:9,content:[{key:'SPY',delayed:false}]}
   ]}), {});
+  assert.equal(accepted, true);
   assert.equal(a.state.sequenceObservations, 2);
   assert.equal(a.state.sequenceGaps, 1);
   assert.equal(a.state.continuity, 'FAILED_SEQUENCE_GAP');
