@@ -1,6 +1,7 @@
 'use strict';
 
 const { CERT_CLASS, forbiddenPaths, validateSourceProof } = require('./source-proof');
+const SUPPORTED_CANDIDATE_SCHEMA_VERSION = 1;
 
 function isoFromEpochMs(value) {
   const n = Number(value);
@@ -43,6 +44,7 @@ function evaluateSchwabCandidate(candidate, options = {}) {
 
   const forbidden = forbiddenPaths(candidate);
   if (forbidden.length) normalizationErrors.push('FORBIDDEN_SECRET_FIELD_IN_CANDIDATE');
+  if (candidate.candidate_schema_version !== SUPPORTED_CANDIDATE_SCHEMA_VERSION) normalizationErrors.push('UNSUPPORTED_CANDIDATE_SCHEMA_VERSION');
   if (candidate.classification !== 'EMPIRICAL_MARKET_SOURCE_EVIDENCE_CANDIDATE') normalizationErrors.push('WRONG_CANDIDATE_CLASSIFICATION');
   if (candidate.source !== 'SCHWAB_TOS') normalizationErrors.push('WRONG_SOURCE');
   if (candidate.provider !== 'Charles Schwab Trader API') normalizationErrors.push('WRONG_PROVIDER');
@@ -85,6 +87,7 @@ function evaluateSchwabCandidate(candidate, options = {}) {
     provenance: `Charles Schwab Trader API streamer -> MarketSphere Schwab/TOS adapter ${str(candidate.adapter_version) || 'unknown-version'}`,
     proof_window_start: firstDataAt,
     proof_window_end: recvTs,
+    adapter_candidate_schema_version: candidate.candidate_schema_version,
     adapter_candidate_state: candidate.state,
     adapter_candidate_eligible: candidate.eligible_for_governed_review === true,
     adapter_version: str(candidate.adapter_version),
@@ -114,4 +117,4 @@ function evaluateSchwabCandidate(candidate, options = {}) {
   };
 }
 
-module.exports = { evaluateSchwabCandidate, isoFromEpochMs, numberOrNull };
+module.exports = { SUPPORTED_CANDIDATE_SCHEMA_VERSION, evaluateSchwabCandidate, isoFromEpochMs, numberOrNull };
