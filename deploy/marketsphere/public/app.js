@@ -10,18 +10,20 @@ async function api(path, opts={}) {
   if (ownerToken && opts.owner) headers.Authorization = `Bearer ${ownerToken}`;
   const res = await fetch(path, { ...opts, headers });
   let body; try { body = await res.json(); } catch { body = { error: 'INVALID_JSON' }; }
-  return { ok: res.ok, status: res.status, body, requestId: res.headers.get('x-request-id') };
+  return { ok: res.ok, status: res.status, body, requestId: res.headers.get('x-request-id'), disposition: res.headers.get('content-disposition') };
 }
 
 async function refresh() {
   const [r, s] = await Promise.all([api('/api/readiness'), api('/api/sources')]);
   if (!r.ok) throw new Error(`readiness ${r.status}`);
   const g = r.body.gates;
-  $('overall').textContent = (g.runtime === 'PASS' && g.storage === 'PASS' && g.browser_interactivity === 'PASS') ? 'APP PATH PROVEN' : 'CERTIFICATION OPEN';
-  $('overall').className = `badge ${(g.runtime === 'PASS' && g.storage === 'PASS' && g.browser_interactivity === 'PASS') ? 'pass' : 'waiting'}`;
+  const appPass = g.runtime === 'PASS' && g.storage === 'PASS' && g.evidence_store === 'PASS' && g.evidence_integrity === 'PASS' && g.browser_interactivity === 'PASS';
+  $('overall').textContent = appPass ? 'APP PATH PROVEN' : 'CERTIFICATION OPEN';
+  $('overall').className = `badge ${appPass ? 'pass' : 'waiting'}`;
   const cards = [
-    ['Runtime', g.runtime], ['Storage', g.storage], ['Browser', g.browser_interactivity], ['Owner', g.owner_auth], ['T0', g.t0],
-    ['Capital authority', g.capital_authority], ['CME', g.cme], ['Schwab', g.schwab], ['Real ingestion', g.real_market_ingestion], ['Quorum', g.source_quorum]
+    ['Runtime', g.runtime], ['Storage', g.storage], ['Evidence store', g.evidence_store], ['Evidence integrity', g.evidence_integrity], ['Recovery', g.recovery],
+    ['Browser', g.browser_interactivity], ['Owner', g.owner_auth], ['T0', g.t0], ['Capital authority', g.capital_authority],
+    ['CME', g.cme], ['Schwab', g.schwab], ['Real ingestion', g.real_market_ingestion], ['Quorum', g.source_quorum]
   ];
   $('gates').innerHTML = cards.map(([k,v]) => `<article class="card"><span>${esc(k)}</span><strong class="status ${badgeClass(v)}">${esc(v)}</strong></article>`).join('');
   if (s.ok) {
@@ -40,6 +42,7 @@ $('ownerVerify').addEventListener('click', async () => {
   const r = await api('/api/whoami', { owner: true });
   $('ownerResult').textContent = JSON.stringify(r.body, null, 2);
   $('ownerToken').value = '';
+  if (!r.ok) ownerToken = '';
   await refresh();
 });
 $('selfTest').addEventListener('click', async () => {
@@ -49,6 +52,31 @@ $('selfTest').addEventListener('click', async () => {
   }
   const r = await api('/api/certification/selftest', { method: 'POST', owner: true });
   $('ownerResult').textContent = JSON.stringify(r.body, null, 2);
+  await refresh();
+});
+$('integrityVerify').addEventListener('click', async () => {
+  if (!ownerToken) { $('evidenceResult').textContent = 'Verify owner first.'; return; }
+  const r = await api('/api/evidence/integrity', { owner: true });
+  $('evidenceResult').textContent = JSON.stringify(r.body, null, 2);
+  await refresh();
+});
+$('snapshotCapture').addEventListener('click', async () => {
+  if (!ownerToken) { $('evidenceResult').textContent = 'Verify owner first.'; return; }
+  const r = await api('/api/certification/snapshot', { method: 'POST', owner: true });
+  $('evidenceResult').textContent = JSON.stringify(r.body, null, 2);
+  await refresh();
+});
+$('bundleDownload').addEventListener('click', async () => {
+  if (!ownerToken) { $('evidenceResult').textContent = 'Verify owner first.'; return; }
+  const res = await fetch('/api/certification/bundle', { headers: { Authorization: `Bearer ${ownerToken}` } });
+  if (!res.ok) { $('evidenceResult').textContent = JSON.stringify(await res.json(), null, 2); return; }
+  const blob = await res.blob();
+  const disposition = res.headers.get('content-disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : 'MarketSphere-certification-bundle.json';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  $('evidenceResult').textContent = `Downloaded ${filename}`;
   await refresh();
 });
 
