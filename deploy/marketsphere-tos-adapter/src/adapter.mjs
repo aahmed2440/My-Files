@@ -26,8 +26,7 @@ function streamFrameMaxBytes() {
   return boundedBytes(process.env.SCHWAB_MAX_FRAME_BYTES, DEFAULT_STREAM_FRAME_MAX_BYTES, 64 * 1024, 8 * 1024 * 1024);
 }
 function credentialMode(state) {
-  if (state === 'TOKEN_EXPIRED') return 'AUTH_FAILED';
-  return 'AUTH_REQUIRED';
+  return state === 'TOKEN_EXPIRED' ? 'AUTH_FAILED' : 'AUTH_REQUIRED';
 }
 
 export function validateStreamerUrl(raw, allowedHosts = streamHostAllowlist()) {
@@ -98,9 +97,7 @@ export class SchwabTosAdapter {
     this.fields = process.env.SCHWAB_TOS_FIELDS ?? '0,1,2,3,8,10,11,12,13,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42';
   }
 
-  credentialStatus() {
-    return this.credentials.status();
-  }
+  credentialStatus() { return this.credentials.status(); }
 
   applyCredentialFailure(code) {
     const state = String(code || 'CREDENTIAL_REJECTED');
@@ -109,6 +106,14 @@ export class SchwabTosAdapter {
     this.state.setSocket('DISCONNECTED');
     this.state.setSubscription('NOT_SUBSCRIBED');
     this.state.recordError(state);
+  }
+
+  enforceCredentialLease() {
+    const credential = this.credentialStatus();
+    if (credential.state === 'READY') return true;
+    this.applyCredentialFailure(credential.state);
+    try { this.ws?.close(); } catch {}
+    return false;
   }
 
   async start() {
@@ -199,6 +204,8 @@ export class SchwabTosAdapter {
     let msg;
     try { msg = JSON.parse(text); }
     catch { this.state.parseErrors += 1; this.state.recordError('JSON_PARSE_ERROR'); return; }
+
+    if (!this.enforceCredentialLease()) return;
 
     if (Array.isArray(msg.notify)) {
       for (const n of msg.notify) {
