@@ -92,3 +92,17 @@ test('certification bundle is downloadable, governed, and integrity-backed', asy
   assert.equal(r.status,200); assert.match(r.headers.get('content-disposition') || '',/attachment/);
   assert.match(j.bundle_id,/^MS-CERT-/); assert.equal(j.governance.t0,'LOCKED'); assert.equal(j.governance.capital_authority,'NONE'); assert.equal(j.evidence_integrity.status,'PASS'); assert.equal(j.bundle_generation_evidence.ok,true);
 });
+
+test('integrity verifier detects tampering and passes again after restoration', async () => {
+  const manifestPath = path.join(dataDir, 'evidence', 'manifest.jsonl');
+  const entries = fs.readFileSync(manifestPath, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  const target = path.join(dataDir, 'evidence', entries[0].filename);
+  const original = fs.readFileSync(target, 'utf8');
+  const parsed = JSON.parse(original); parsed.payload = { ...parsed.payload, tamper_probe: true };
+  fs.writeFileSync(target, JSON.stringify(parsed, null, 2));
+  const bad = await fetch(`${base}/api/evidence/integrity`, {headers:ownerHeaders}); const bj = await bad.json();
+  assert.equal(bad.status,200); assert.equal(bj.status,'FAIL'); assert.ok(bj.hash_mismatch >= 1);
+  fs.writeFileSync(target, original);
+  const good = await fetch(`${base}/api/evidence/integrity`, {headers:ownerHeaders}); const gj = await good.json();
+  assert.equal(good.status,200); assert.equal(gj.status,'PASS'); assert.equal(gj.hash_mismatch,0);
+});
