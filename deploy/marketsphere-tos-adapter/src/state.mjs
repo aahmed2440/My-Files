@@ -9,6 +9,7 @@ export class FeedState {
     this.source = 'SCHWAB_TOS';
     this.provider = 'Charles Schwab Trader API';
     this.adapterVersion = '0.2.0-cert';
+    this.candidateSchemaVersion = 1;
     this.tradingAuthority = 'NONE';
     this.productionMutation = false;
     this.symbolsConfigured = [...symbols];
@@ -122,6 +123,7 @@ export class FeedState {
     const hbAge = age(this.lastHeartbeatAt), dataAge = age(this.lastDataAt);
     const effective = this.derivedMode({ heartbeatStaleMs, dataStaleMs });
     return {
+      candidate_schema_version:this.candidateSchemaVersion,
       source:this.source, provider:this.provider, adapter_version:this.adapterVersion, mode:effective, raw_mode:this.mode,
       auth:this.auth, subscription:this.subscription, socket:this.socket, entitlement:this.entitlement,
       realtime_status:this.realtimeStatus, timestamp_integrity:this.timestampIntegrity, continuity:this.continuity,
@@ -143,6 +145,7 @@ export class FeedState {
   proof({ heartbeatStaleMs = 45000, dataStaleMs = 90000 } = {}) {
     const snap = this.snapshot({ heartbeatStaleMs, dataStaleMs });
     return {
+      candidate_schema_version:this.candidateSchemaVersion,
       classification:'EMPIRICAL_MARKET_SOURCE_EVIDENCE_CANDIDATE',
       source:this.source, provider:this.provider, adapter_version:this.adapterVersion,
       authentication:this.auth, subscription:this.subscription, connection:this.socket,
