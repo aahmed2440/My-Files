@@ -35,7 +35,7 @@ Each evidence record carries:
 - event-specific payload
 - SHA-256 hash
 
-The manifest is append-only JSONL and preserves the hash chain. The integrity endpoint verifies file presence, record hashes, manifest hashes and chain continuity.
+The manifest is append-only JSONL and preserves the hash chain. The integrity endpoint verifies file presence, record hashes, manifest hashes and chain continuity. The test suite also performs a falsification test: it alters an evidence file, requires the verifier to report `FAIL`, restores the original bytes, and requires `PASS` again.
 
 ## Required production secret
 
