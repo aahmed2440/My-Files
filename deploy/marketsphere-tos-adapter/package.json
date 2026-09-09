@@ -1,6 +1,6 @@
 {
   "name": "marketsphere-schwab-tos-adapter",
-  "version": "0.1.2",
+  "version": "0.2.0-cert",
   "private": true,
   "type": "module",
   "scripts": {

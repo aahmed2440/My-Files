@@ -1,9 +1,10 @@
-name: MarketSphere TOS Adapter Hardening
+name: MarketSphere Schwab/TOS Adapter Hardening
 
 on:
   push:
     branches:
       - "hardening/marketsphere-tos-credential-boundary-2026-09-07"
+      - "hardening/marketsphere-schwab-cert-v0.2-20260908"
     paths:
       - "deploy/marketsphere-tos-adapter/**"
       - ".github/workflows/marketsphere-tos-hardening.yml"
@@ -24,11 +25,11 @@ jobs:
       run:
         working-directory: deploy/marketsphere-tos-adapter
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - name: Check out immutable source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: Set up Node 24
-        uses: actions/setup-node@v4
+      - name: Set up immutable Node action
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
 
@@ -49,7 +50,7 @@ jobs:
           console.log('No runtime NPM dependencies: PASS');
           NODE
 
-      - name: Verify fail-closed credential-boundary markers
+      - name: Verify credential-boundary markers
         shell: bash
         run: |
           set -euo pipefail
@@ -59,3 +60,39 @@ jobs:
           grep -q "TOS_EXPOSE_DIAGNOSTICS.*false" qtrust_bridge.mjs
           grep -q "QTRUST_BRIDGE_TRUST_FORWARD_HEADERS.*false" qtrust_bridge.mjs
           echo "Credential-boundary markers: PASS"
+
+      - name: Verify fail-closed source-certification markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "candidateSchemaVersion = 1" src/state.mjs
+          grep -q "SUBSCRIBED_AWAITING_DATA" src/state.mjs
+          grep -q "ENTITLEMENT_PENDING" src/state.mjs
+          grep -q "TIMESTAMP_INTEGRITY_PENDING" src/state.mjs
+          grep -q "CONTINUITY_PENDING" src/state.mjs
+          grep -q "sequenceGaps = null" src/state.mjs
+          grep -q "timestampIntegrity = 'UNVERIFIED'" src/state.mjs
+          grep -q "automatic_live_promotion:false" src/state.mjs
+          if grep -q "setMode('LIVE')" src/adapter.mjs; then
+            echo '::error::Adapter must not promote SUBS/data directly to LIVE.'
+            exit 1
+          fi
+          echo "Fail-closed source-certification markers: PASS"
+
+      - name: Verify HTTP and bridge contracts cannot advertise automatic LIVE
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "CANDIDATE_SCHEMA_VERSION = 1" src/server.mjs
+          grep -q "CANDIDATE_SCHEMA_VERSION = 1" qtrust_bridge.mjs
+          grep -q "required_for_governed_review" src/server.mjs
+          grep -q "required_for_governed_review" qtrust_bridge.mjs
+          grep -q "timestamp_integrity=VERIFIED" src/server.mjs
+          grep -q "timestamp_integrity=VERIFIED" qtrust_bridge.mjs
+          grep -q "automatic_live_promotion: false" src/server.mjs
+          grep -q "automatic_live_promotion:false" qtrust_bridge.mjs
+          if grep -q "required_for_live" src/server.mjs qtrust_bridge.mjs; then
+            echo '::error::Legacy required_for_live contract detected.'
+            exit 1
+          fi
+          echo "HTTP/bridge certification contract: PASS"
