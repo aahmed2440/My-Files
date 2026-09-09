@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "program": "MarketSphere",
+  "version": "4.7.0-evidence-hardening",
+  "levels": {
+    "MS-L0": {
+      "name": "Infrastructure Certified",
+      "required": ["runtime", "storage"],
+      "current": "EVIDENCE_AVAILABLE"
+    },
+    "MS-L1": {
+      "name": "Application Certified",
+      "required": [
+        "runtime",
+        "storage",
+        "evidence_store",
+        "evidence_integrity",
+        "browser_interactivity",
+        "owner_auth",
+        "synthetic_failure_state_behavior",
+        "recovery",
+        "live_certification_bundle"
+      ],
+      "current": "PENDING_LIVE_DEPLOYMENT_EVIDENCE"
+    },
+    "MS-L2": {
+      "name": "Market Data Certified",
+      "required": [
+        "empirical_provider_authentication",
+        "subscription_acknowledgement",
+        "first_market_event",
+        "heartbeat",
+        "freshness",
+        "timestamp_integrity",
+        "sequence_integrity",
+        "reconnect_recovery",
+        "provider_provenance"
+      ],
+      "current": "WAITING_EXTERNAL_SOURCE"
+    },
+    "MS-L3": {
+      "name": "Multi-Source Intelligence Certified",
+      "required": ["two_or_more_certified_sources", "quorum", "contradiction_handling", "cross_source_freshness"],
+      "current": "LOCKED"
+    },
+    "MS-L4": {
+      "name": "Governed Action Certified",
+      "required": ["separate_governance_authorization"],
+      "current": "LOCKED"
+    }
+  },
+  "governance": {
+    "t0": "LOCKED",
+    "capital_authority": "NONE",
+    "owner_is_not_capital_authority": true,
+    "configuration_declarations_are_not_empirical_evidence": true,
+    "synthetic_evidence_can_certify_real_sources": false
+  },
+  "remaining_ms_l1_live_gates": [
+    "isolated live deployment",
+    "browser GET and JavaScript path",
+    "persisted browser-proof evidence",
+    "live Owner denied/pass evidence",
+    "live simulated HEALTHY/DEGRADED/STALE/OFFLINE behavior",
+    "deployed restart/persistence recovery proof",
+    "first live MS-CERT bundle"
+  ],
+  "attribution": "Designed, Engineered, & Built By: Azad Ahmed - in a mission to solve intelligence at civilizational scale"
+}
