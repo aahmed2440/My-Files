@@ -1,0 +1,12 @@
+{
+  "name": "marketsphere-replay-cert",
+  "version": "0.6.0-replay-cert",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/schema.mjs && node --check src/historian.mjs && node --check src/replay_engine.mjs && node --check src/server.mjs"
+  },
+  "engines": { "node": ">=22" }
+}
