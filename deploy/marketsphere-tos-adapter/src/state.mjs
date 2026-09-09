@@ -2,6 +2,23 @@ import crypto from 'node:crypto';
 
 const nowIso = () => new Date().toISOString();
 const age = (iso) => iso ? Math.max(0, Date.now() - Date.parse(iso)) : null;
+const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
+
+function canonicalJson(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+  }
+  const encoded = JSON.stringify(value);
+  return encoded === undefined ? 'null' : encoded;
+}
+
+function numericSequence(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
 
 export class FeedState {
   constructor({ symbols = [], services = [] } = {}) {
@@ -23,10 +40,16 @@ export class FeedState {
     this.timestampIntegrity = 'UNVERIFIED';
     this.continuity = 'UNVERIFIED';
     this.sequenceGaps = null;
+    this.sequenceObservations = 0;
+    this.sequenceRegressions = 0;
+    this.duplicateSequences = 0;
+    this.timestampRegressions = 0;
+    this.duplicatePayloads = 0;
     this.lastHeartbeatAt = null;
     this.lastDataAt = null;
     this.lastEventAt = null;
     this.lastServerTimestamp = null;
+    this.lastDataSourceTimestamp = null;
     this.clockSkewMs = null;
     this.heartbeats = 0;
     this.dataMessages = 0;
@@ -39,6 +62,10 @@ export class FeedState {
     this.lastErrorAt = null;
     this.firstDataProof = null;
     this.lastDataProof = null;
+    this.proofChainHead = null;
+    this.proofChainLength = 0;
+    this.recentPayloadKeys = new Map();
+    this.lastSequenceByService = new Map();
     this.realtimeObservations = 0;
     this.delayedObservations = 0;
     this.unknownRealtimeObservations = 0;
@@ -50,7 +77,7 @@ export class FeedState {
   setSocket(socket) { this.socket = socket; this.lastEventAt = nowIso(); }
   setEntitlement(value) { this.entitlement = value; this.lastEventAt = nowIso(); }
   setTimestampIntegrity(value) { this.timestampIntegrity = value; this.lastEventAt = nowIso(); }
-  setContinuity(value, { sequenceGaps = null } = {}) { this.continuity = value; this.sequenceGaps = sequenceGaps; this.lastEventAt = nowIso(); }
+  setContinuity(value, { sequenceGaps = this.sequenceGaps } = {}) { this.continuity = value; this.sequenceGaps = sequenceGaps; this.lastEventAt = nowIso(); }
   recordError(code) { this.lastErrorCode = String(code || 'UNKNOWN').slice(0, 80); this.lastErrorAt = nowIso(); this.lastEventAt = this.lastErrorAt; }
 
   heartbeat(serverMs) {
@@ -60,7 +87,42 @@ export class FeedState {
 
   response() { this.responsesReceived += 1; this.lastEventAt = nowIso(); }
 
-  data(service, timestamp, content = []) {
+  observeSequence(service, sequence) {
+    const seq = numericSequence(sequence);
+    if (seq === null) return null;
+    this.sequenceObservations += 1;
+    if (this.sequenceGaps === null) this.sequenceGaps = 0;
+    const previous = this.lastSequenceByService.get(service);
+    if (previous !== undefined) {
+      if (seq === previous) {
+        this.duplicateSequences += 1;
+        this.continuity = 'SEQUENCE_DUPLICATE_OBSERVED';
+      } else if (seq < previous) {
+        this.sequenceRegressions += 1;
+        this.continuity = 'FAILED_SEQUENCE_REGRESSION';
+      } else if (seq > previous + 1) {
+        this.sequenceGaps += seq - previous - 1;
+        this.continuity = 'FAILED_SEQUENCE_GAP';
+      } else if (!this.continuity.startsWith('FAILED_')) {
+        this.continuity = 'SEQUENCE_CONTIGUOUS_OBSERVED';
+      }
+    } else if (this.continuity === 'UNVERIFIED') {
+      this.continuity = 'SEQUENCE_OBSERVED_AWAITING_CONTINUITY';
+    }
+    if (previous === undefined || seq > previous) this.lastSequenceByService.set(service, seq);
+    return seq;
+  }
+
+  rememberPayload(key) {
+    if (this.recentPayloadKeys.has(key)) this.duplicatePayloads += 1;
+    this.recentPayloadKeys.set(key, true);
+    if (this.recentPayloadKeys.size > 256) {
+      const oldest = this.recentPayloadKeys.keys().next().value;
+      this.recentPayloadKeys.delete(oldest);
+    }
+  }
+
+  data(service, timestamp, content = [], sequence = null) {
     const t = nowIso(); this.lastDataAt = t; this.lastEventAt = t; this.dataMessages += 1;
     const items = Array.isArray(content) ? content : [content];
     const n = items.length; this.eventsReceived += n;
@@ -88,11 +150,33 @@ export class FeedState {
     else this.realtimeStatus = 'UNVERIFIED';
 
     const sourceTimestampMs = timestamp && Number.isFinite(Number(timestamp)) ? Number(timestamp) : null;
-    if (sourceTimestampMs !== null) { this.lastServerTimestamp = sourceTimestampMs; this.clockSkewMs = Date.now() - sourceTimestampMs; }
+    if (sourceTimestampMs !== null) {
+      if (this.lastDataSourceTimestamp !== null && sourceTimestampMs < this.lastDataSourceTimestamp) {
+        this.timestampRegressions += 1;
+        this.timestampIntegrity = 'FAILED_TIMESTAMP_REGRESSION';
+      }
+      this.lastDataSourceTimestamp = sourceTimestampMs;
+      this.lastServerTimestamp = sourceTimestampMs;
+      this.clockSkewMs = Date.now() - sourceTimestampMs;
+    }
+
+    const observedSequence = this.observeSequence(service, sequence);
     const symbols = [...new Set(frameSymbols)].sort();
-    const proofPayload = JSON.stringify({ source:this.source, service, sourceTimestampMs, receivedAt:t, count:n, symbols, realtime:frameRealtime, delayed:frameDelayed, unknown:frameUnknown });
-    const proof = crypto.createHash('sha256').update(proofPayload).digest('hex');
-    const frameProof = { observedAt:t, receivedAt:t, sourceTimestampMs, sha256:proof, service, count:n, symbols, realtime:frameRealtime, delayed:frameDelayed, unknown:frameUnknown };
+    const canonicalPayload = canonicalJson(items);
+    const payloadSha256 = sha256(canonicalPayload);
+    const envelope = canonicalJson({ source:this.source, service, sourceTimestampMs, sequence:observedSequence, count:n, payloadSha256 });
+    const eventSha256 = sha256(envelope);
+    const chainMaterial = canonicalJson({ previous:this.proofChainHead, eventSha256 });
+    const chainSha256 = sha256(chainMaterial);
+    this.proofChainHead = chainSha256;
+    this.proofChainLength += 1;
+    this.rememberPayload(`${service}:${sourceTimestampMs ?? 'none'}:${payloadSha256}`);
+
+    const frameProof = {
+      observedAt:t, receivedAt:t, sourceTimestampMs, sequence:observedSequence,
+      sha256:eventSha256, payload_sha256:payloadSha256, event_sha256:eventSha256, chain_sha256:chainSha256,
+      service, count:n, symbols, realtime:frameRealtime, delayed:frameDelayed, unknown:frameUnknown
+    };
     if (!this.firstDataProof) this.firstDataProof = frameProof;
     this.lastDataProof = frameProof;
   }
@@ -111,6 +195,8 @@ export class FeedState {
     if (dataAge !== null && dataAge > dataStaleMs) return 'STALE';
     if (!this.lastHeartbeatAt) return 'DATA_OBSERVED_AWAITING_HEARTBEAT';
     if (hbAge !== null && hbAge > heartbeatStaleMs) return 'DEGRADED';
+    if (this.timestampIntegrity.startsWith('FAILED_')) return 'TIMESTAMP_INTEGRITY_FAILED';
+    if (this.continuity.startsWith('FAILED_')) return 'CONTINUITY_FAILED';
     if (this.realtimeStatus === 'DELAYED_OBSERVED') return 'DELAYED_DATA';
     if (this.realtimeStatus !== 'REALTIME_OBSERVED') return 'REALTIME_STATUS_UNVERIFIED';
     if (this.entitlement !== 'VERIFIED') return 'ENTITLEMENT_PENDING';
@@ -132,7 +218,10 @@ export class FeedState {
       last_receive_at:this.lastDataProof?.receivedAt ?? null,
       last_event_at:this.lastEventAt, events_received:this.eventsReceived, data_messages:this.dataMessages, heartbeats:this.heartbeats,
       responses_received:this.responsesReceived, reconnects:this.reconnects, parse_errors:this.parseErrors,
-      sequence_gaps:this.sequenceGaps, clock_skew_ms:this.clockSkewMs,
+      sequence_gaps:this.sequenceGaps, sequence_observations:this.sequenceObservations,
+      sequence_regressions:this.sequenceRegressions, duplicate_sequences:this.duplicateSequences,
+      timestamp_regressions:this.timestampRegressions, duplicate_payloads:this.duplicatePayloads,
+      clock_skew_ms:this.clockSkewMs, proof_chain_length:this.proofChainLength, proof_chain_head_sha256:this.proofChainHead,
       realtime_observations:this.realtimeObservations, delayed_observations:this.delayedObservations,
       unknown_realtime_observations:this.unknownRealtimeObservations,
       symbols_configured:this.symbolsConfigured, symbols_observed:[...this.symbolsObserved].sort(), services_configured:this.servicesConfigured,
@@ -150,6 +239,7 @@ export class FeedState {
       source:this.source, provider:this.provider, adapter_version:this.adapterVersion,
       authentication:this.auth, subscription:this.subscription, connection:this.socket,
       first_data:this.firstDataProof, last_data:this.lastDataProof,
+      proof_chain_length:this.proofChainLength, proof_chain_head_sha256:this.proofChainHead,
       last_heartbeat_at:this.lastHeartbeatAt,
       last_source_timestamp_ms:this.lastDataProof?.sourceTimestampMs ?? null,
       last_receive_at:this.lastDataProof?.receivedAt ?? null,
@@ -157,7 +247,9 @@ export class FeedState {
       events_received:this.eventsReceived, data_messages:this.dataMessages, heartbeats:this.heartbeats,
       symbols_observed:[...this.symbolsObserved].sort(), realtime_status:this.realtimeStatus,
       entitlement:this.entitlement, timestamp_integrity:this.timestampIntegrity,
-      continuity:this.continuity, sequence_gaps:this.sequenceGaps,
+      continuity:this.continuity, sequence_gaps:this.sequenceGaps, sequence_observations:this.sequenceObservations,
+      sequence_regressions:this.sequenceRegressions, duplicate_sequences:this.duplicateSequences,
+      timestamp_regressions:this.timestampRegressions, duplicate_payloads:this.duplicatePayloads,
       heartbeat_age_ms:snap.heartbeat_age_ms, data_age_ms:snap.data_age_ms,
       state:snap.mode, eligible_for_governed_review:snap.mode === 'ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW',
       automatic_live_promotion:false, trading_authority:this.tradingAuthority

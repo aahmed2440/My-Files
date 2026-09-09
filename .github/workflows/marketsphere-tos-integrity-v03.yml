@@ -1,0 +1,57 @@
+name: MarketSphere Schwab/TOS Integrity v0.3
+
+on:
+  push:
+    branches:
+      - "hardening/marketsphere-schwab-cert-v0.3-20260909"
+    paths:
+      - "deploy/marketsphere-tos-adapter/**"
+      - ".github/workflows/marketsphere-tos-integrity-v03.yml"
+  pull_request:
+    paths:
+      - "deploy/marketsphere-tos-adapter/**"
+      - ".github/workflows/marketsphere-tos-integrity-v03.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/marketsphere-tos-adapter
+    steps:
+      - name: Check out immutable source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up immutable Node action
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+
+      - name: Syntax checks
+        run: npm run check
+
+      - name: Full adapter regression suite
+        run: npm test
+
+      - name: Verify integrity and risk-off markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "payload_sha256" src/state.mjs
+          grep -q "proof_chain_head_sha256" src/state.mjs
+          grep -q "FAILED_TIMESTAMP_REGRESSION" src/state.mjs
+          grep -q "FAILED_SEQUENCE_GAP" src/state.mjs
+          grep -q "SCHWAB_MAX_FRAME_BYTES" src/adapter.mjs
+          grep -q "STREAM_FRAME_TOO_LARGE" src/adapter.mjs
+          grep -q "tradingAuthority = 'NONE'" src/state.mjs
+          grep -q "productionMutation = false" src/state.mjs
+          if grep -q "setMode('LIVE')" src/adapter.mjs; then
+            echo '::error::Automatic LIVE promotion is prohibited.'
+            exit 1
+          fi
+          echo "MarketSphere v0.3 integrity gates: PASS"

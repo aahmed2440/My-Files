@@ -2,6 +2,7 @@ import { FeedState } from './state.mjs';
 
 const PREF_URL = 'https://api.schwabapi.com/trader/v1/userPreference';
 const DEFAULT_PREF_RESPONSE_MAX_BYTES = 512 * 1024;
+const DEFAULT_STREAM_FRAME_MAX_BYTES = 2 * 1024 * 1024;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function envList(name, fallback = '') {
@@ -13,10 +14,16 @@ function requestIdFactory() { let n = 0; return () => String(++n); }
 function fail(code) { const e = new Error(code); e.code = code; return e; }
 function normalizeHost(value) { return String(value ?? '').trim().toLowerCase().replace(/^\.+|\.+$/g, ''); }
 function streamHostAllowlist() { return envList('SCHWAB_STREAM_HOST_ALLOWLIST').map(normalizeHost).filter(Boolean); }
+function boundedBytes(raw, fallback, min, max) {
+  const n = Number(raw ?? fallback);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
 function preferenceResponseMaxBytes() {
-  const raw = Number(process.env.SCHWAB_PREF_RESPONSE_MAX_BYTES ?? DEFAULT_PREF_RESPONSE_MAX_BYTES);
-  if (!Number.isFinite(raw)) return DEFAULT_PREF_RESPONSE_MAX_BYTES;
-  return Math.max(16 * 1024, Math.min(2 * 1024 * 1024, Math.floor(raw)));
+  return boundedBytes(process.env.SCHWAB_PREF_RESPONSE_MAX_BYTES, DEFAULT_PREF_RESPONSE_MAX_BYTES, 16 * 1024, 2 * 1024 * 1024);
+}
+function streamFrameMaxBytes() {
+  return boundedBytes(process.env.SCHWAB_MAX_FRAME_BYTES, DEFAULT_STREAM_FRAME_MAX_BYTES, 64 * 1024, 8 * 1024 * 1024);
 }
 
 export function validateStreamerUrl(raw, allowedHosts = streamHostAllowlist()) {
@@ -82,6 +89,7 @@ export class SchwabTosAdapter {
     this.nextRequestId = requestIdFactory();
     this.reconnectDelayMs = 1000;
     this.maxReconnectMs = 30000;
+    this.maxFrameBytes = streamFrameMaxBytes();
     this.fields = process.env.SCHWAB_TOS_FIELDS ?? '0,1,2,3,8,10,11,12,13,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42';
   }
 
@@ -152,8 +160,14 @@ export class SchwabTosAdapter {
   }
 
   onMessage(raw, info) {
+    const text = String(raw);
+    if (Buffer.byteLength(text, 'utf8') > this.maxFrameBytes) {
+      this.state.recordError('STREAM_FRAME_TOO_LARGE');
+      return;
+    }
+
     let msg;
-    try { msg = JSON.parse(String(raw)); }
+    try { msg = JSON.parse(text); }
     catch { this.state.parseErrors += 1; this.state.recordError('JSON_PARSE_ERROR'); return; }
 
     if (Array.isArray(msg.notify)) {
@@ -184,7 +198,8 @@ export class SchwabTosAdapter {
     }
 
     if (Array.isArray(msg.data)) for (const d of msg.data) {
-      this.state.data(d?.service ?? 'UNKNOWN', d?.timestamp, d?.content ?? []);
+      const sequence = d?.sequence ?? d?.seq ?? null;
+      this.state.data(d?.service ?? 'UNKNOWN', d?.timestamp, d?.content ?? [], sequence);
       this.state.setMode(this.state.derivedMode());
     }
   }
