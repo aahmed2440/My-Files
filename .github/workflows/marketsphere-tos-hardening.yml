@@ -75,3 +75,17 @@ jobs:
             exit 1
           fi
           echo "Fail-closed source-certification markers: PASS"
+
+      - name: Verify HTTP and bridge contracts cannot advertise automatic LIVE
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "required_for_governed_review" src/server.mjs
+          grep -q "required_for_governed_review" qtrust_bridge.mjs
+          grep -q "automatic_live_promotion: false" src/server.mjs
+          grep -q "automatic_live_promotion:false" qtrust_bridge.mjs
+          if grep -q "required_for_live" src/server.mjs qtrust_bridge.mjs; then
+            echo '::error::Legacy required_for_live contract detected.'
+            exit 1
+          fi
+          echo "HTTP/bridge certification contract: PASS"
