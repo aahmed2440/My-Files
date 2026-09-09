@@ -4,6 +4,12 @@
   "provider": "Charles Schwab Trader API",
   "status": "AWAITING_AUTHORITATIVE_SEQUENCE_OR_CONTINUITY_METHOD",
   "certification_mode": "EMPIRICAL_ONLY",
+  "adapter_candidate_contract": {
+    "supported_schema_version": 1,
+    "schema": "schemas/schwab-adapter-candidate-v1.schema.json",
+    "normalizer": "lib/schwab-proof-normalizer.js",
+    "unknown_versions_fail_closed": true
+  },
   "requirements": {
     "authentication": "VERIFIED",
     "subscription": "ACK",
@@ -37,7 +43,8 @@
     "Subscription acknowledgement is not first-data proof.",
     "Authentication is not entitlement verification.",
     "Delayed data is not eligible for a real-time certification claim.",
-    "Sequence/continuity integrity remains unverified until an authoritative provider mechanism or separately validated alternative is available."
+    "Sequence/continuity integrity remains unverified until an authoritative provider mechanism or separately validated alternative is available.",
+    "Adapter evidence-candidate schema changes are versioned; unknown versions fail closed at the MarketSphere normalizer boundary."
   ],
   "attribution": "Designed, Engineered, & Built By: Azad Ahmed - in a mission to solve intelligence at civilizational scale"
 }
