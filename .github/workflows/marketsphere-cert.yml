@@ -22,8 +22,73 @@ jobs:
       run:
         working-directory: deploy/marketsphere
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout immutable source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up immutable Node action
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - run: npm test
+
+      - name: Full-history high-confidence secret and path scan
+        shell: python
+        run: |
+          import os, pathlib, re, subprocess, sys
+
+          repo = pathlib.Path(os.environ['GITHUB_WORKSPACE'])
+          bad_path = re.compile(r'(^|/)(\.env($|\.)|\.npmrc$|\.pypirc$|\.netrc$|id_rsa$|id_ed25519$|credentials(\.|$)|secrets(\.|$)|service-account.*\.json$)|\.(pem|key|p12|pfx|jks|keystore|ovpn|tfstate|tfvars)$', re.I)
+          secret_patterns = [
+              re.compile(r'-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----'),
+              re.compile(r'(?<![A-Za-z0-9])ghp_[A-Za-z0-9]{30,}'),
+              re.compile(r'(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}'),
+              re.compile(r'(?<![A-Z0-9])AKIA[0-9A-Z]{16}(?![A-Z0-9])'),
+              re.compile(r'(?i)(?:api[_-]?key|client[_-]?secret|access[_-]?token|password)\s*[:=]\s*[\'\"][^\'$<{\n][^\'\"\n]{7,}[\'\"]'),
+          ]
+
+          history_paths = subprocess.check_output(
+              ['git', '-C', str(repo), 'log', '--all', '--pretty=format:', '--name-only'],
+              text=True, errors='ignore'
+          ).splitlines()
+          path_hits = sorted({p for p in history_paths if p and bad_path.search(p)})
+
+          objects = subprocess.check_output(
+              ['git', '-C', str(repo), 'rev-list', '--objects', '--all'],
+              text=True, errors='ignore'
+          ).splitlines()
+          blob_hits = []
+          seen = set()
+          for row in objects:
+              sha, _, obj_path = row.partition(' ')
+              if sha in seen:
+                  continue
+              seen.add(sha)
+              try:
+                  typ = subprocess.check_output(['git', '-C', str(repo), 'cat-file', '-t', sha], text=True).strip()
+                  if typ != 'blob':
+                      continue
+                  size = int(subprocess.check_output(['git', '-C', str(repo), 'cat-file', '-s', sha], text=True).strip())
+                  if size > 1_000_000:
+                      continue
+                  raw = subprocess.check_output(['git', '-C', str(repo), 'cat-file', '-p', sha])
+              except Exception:
+                  continue
+              if b'\x00' in raw:
+                  continue
+              text = raw.decode('utf-8', errors='ignore')
+              if any(p.search(text) for p in secret_patterns):
+                  blob_hits.append((obj_path or '<historical-blob>', sha))
+
+          if path_hits or blob_hits:
+              print('::error::Public-repository history contains material requiring review/remediation.')
+              for p in path_hits:
+                  print(f'historical forbidden path: {p}')
+              for p, sha in blob_hits:
+                  print(f'historical potential secret: {p} object={sha}')
+              sys.exit(1)
+
+          print('Full-history high-confidence secret/path scan: PASS')
+
+      - name: Run MarketSphere certification and hardening suites
+        run: npm test
