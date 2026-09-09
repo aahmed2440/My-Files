@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MarketSphere — Application Certification</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">MARKETSPHERE • APPLICATION CERTIFICATION</p>
+        <h1>Operational Readiness Console</h1>
+        <p class="sub">Evidence-backed browser, identity, persistence and source-state certification. <strong>Capital authority: NONE.</strong></p>
+      </div>
+      <div id="overall" class="badge waiting">CHECKING</div>
+    </header>
+
+    <section class="grid five" id="gates"></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Source Certification</h2>
+          <p>Real, simulated and unavailable sources are explicitly separated.</p>
+        </div>
+        <button id="refresh">Refresh evidence</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Source</th><th>State</th><th>Certification</th><th>Freshness</th><th>Heartbeat</th><th>Messages</th><th>Provenance</th></tr></thead>
+          <tbody id="sources"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel split">
+      <div>
+        <h2>Browser Proof</h2>
+        <p>This proves JavaScript → same-origin API → server → persisted evidence.</p>
+        <button id="browserProof">Run browser proof</button>
+        <pre id="browserResult">Not run in this session.</pre>
+      </div>
+      <div>
+        <h2>Owner Verification</h2>
+        <p>Owner token remains only in this page's memory. It is not stored in localStorage or sent anywhere except the same-origin verification endpoint.</p>
+        <input id="ownerToken" type="password" autocomplete="off" placeholder="Owner token (configure in Railway secret storage)" />
+        <div class="button-row"><button id="ownerVerify">Verify owner</button><button id="selfTest">Run simulated plumbing test</button></div>
+        <pre id="ownerResult">Not verified.</pre>
+      </div>
+    </section>
+
+    <section class="panel warning-panel">
+      <h2>Governance Boundary</h2>
+      <p><strong>T0 remains LOCKED.</strong> Owner identity does not confer capital authority. Synthetic evidence can validate application plumbing but can never promote CME, Schwab, or any other source to LIVE.</p>
+    </section>
+
+    <footer>Designed, Engineered, &amp; Built By: Azad Ahmed - in a mission to solve intelligence at civilizational scale</footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
