@@ -17,7 +17,7 @@ const SOURCE_CONTRACT = {
   evidence_classification:'EMPIRICAL_MARKET_SOURCE_EVIDENCE_CANDIDATE',
   required_for_governed_review:[
     'auth=VERIFIED','subscription=ACK','socket=CONNECTED','first market-data evidence','heartbeat fresh',
-    'realtime_status=REALTIME_OBSERVED','entitlement=VERIFIED','continuity=VERIFIED',
+    'realtime_status=REALTIME_OBSERVED','entitlement=VERIFIED','timestamp_integrity=VERIFIED','continuity=VERIFIED',
     'sequence_gaps=0 when provider continuity mechanism supports sequence semantics'
   ],
   automatic_live_promotion:false,
