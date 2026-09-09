@@ -1,0 +1,58 @@
+name: MarketSphere Historian Integrity v0.4
+
+on:
+  push:
+    branches:
+      - "hardening/marketsphere-historian-v0.4-20260909"
+    paths:
+      - "deploy/marketsphere-tos-adapter/**"
+      - ".github/workflows/marketsphere-historian-v04.yml"
+  pull_request:
+    paths:
+      - "deploy/marketsphere-tos-adapter/**"
+      - ".github/workflows/marketsphere-historian-v04.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historian-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/marketsphere-tos-adapter
+    steps:
+      - name: Check out immutable source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up immutable Node action
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+
+      - name: Syntax checks
+        run: npm run check
+
+      - name: Full adapter and historian regression suite
+        run: npm test
+
+      - name: Verify historian risk-off markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "MARKETSPHERE_HISTORIAN_ENABLED" src/historian.mjs
+          grep -q "APPEND_ONLY_FSYNC" src/historian.mjs
+          grep -q "HISTORIAN_CREDENTIAL_FIELD_REJECTED" src/historian.mjs
+          grep -q "historian_chain_sha256" src/historian.mjs
+          grep -q "credential_fields_prohibited: true" src/historian.mjs
+          grep -q "trading_authority: 'NONE'" src/historian.mjs
+          grep -q "production_mutation: false" src/historian.mjs
+          grep -q "historian_enabled" src/server.mjs
+          grep -q "automatic_live_promotion: false" src/server.mjs
+          if grep -R "SCHWAB_ACCESS_TOKEN" -n src/historian.mjs src/historian_adapter.mjs; then
+            echo '::error::Historian code must not read or persist broker access tokens.'
+            exit 1
+          fi
+          echo "MarketSphere v0.4 historian risk-off gates: PASS"
