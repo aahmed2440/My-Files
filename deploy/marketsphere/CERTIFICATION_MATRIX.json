@@ -26,15 +26,21 @@
     "MS-L2": {
       "name": "Market Data Certified",
       "required": [
+        "versioned_provider_adapter_evidence_contract",
+        "strict_provider_proof_normalization",
         "empirical_provider_authentication",
+        "provider_entitlement_verified",
         "subscription_acknowledgement",
         "first_market_event",
+        "realtime_not_delayed",
         "heartbeat",
-        "freshness",
+        "freshness_recomputed_from_source_timestamp",
         "timestamp_integrity",
-        "sequence_integrity",
+        "sequence_or_governed_alternative_continuity_integrity",
         "reconnect_recovery",
-        "provider_provenance"
+        "provider_service_instrument_scope",
+        "provider_provenance",
+        "secret_free_evidence"
       ],
       "current": "WAITING_EXTERNAL_SOURCE"
     },
@@ -49,12 +55,29 @@
       "current": "LOCKED"
     }
   },
+  "provider_contracts": {
+    "SCHWAB": {
+      "candidate_schema_version": 1,
+      "candidate_schema": "schemas/schwab-adapter-candidate-v1.schema.json",
+      "normalizer": "lib/schwab-proof-normalizer.js",
+      "unknown_candidate_versions_fail_closed": true,
+      "automatic_live_promotion": false,
+      "current_external_state": "AWAITING_API_APPROVAL"
+    },
+    "CME": {
+      "profile": "profiles/cme-source-profile.json",
+      "automatic_live_promotion": false,
+      "current_external_state": "AWAITING_CREDENTIALS_ENTITLEMENT"
+    }
+  },
   "governance": {
     "t0": "LOCKED",
     "capital_authority": "NONE",
     "owner_is_not_capital_authority": true,
     "configuration_declarations_are_not_empirical_evidence": true,
-    "synthetic_evidence_can_certify_real_sources": false
+    "synthetic_evidence_can_certify_real_sources": false,
+    "adapter_candidate_eligibility_alone_can_certify_source": false,
+    "normalized_validator_eligibility_alone_can_auto_promote_live": false
   },
   "remaining_ms_l1_live_gates": [
     "isolated live deployment",
