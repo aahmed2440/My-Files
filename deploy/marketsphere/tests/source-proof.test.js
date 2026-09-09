@@ -11,6 +11,8 @@ function validProof() {
     provider: 'Provider Under Test',
     service: 'MARKET_DATA',
     instrument: 'TEST-INSTRUMENT',
+    entitlement_verified: true,
+    delayed: false,
     authentication: 'VERIFIED',
     subscription: 'ACK',
     connection: 'CONNECTED',
@@ -47,7 +49,7 @@ test('synthetic proof is categorically ineligible', () => {
   assert.ok(r.errors.includes('SIMULATED_OR_SYNTHETIC'));
 });
 
-test('missing packet/heartbeat/integrity evidence fails closed', () => {
+test('missing packet heartbeat and integrity evidence fails closed', () => {
   const p = validProof();
   p.messages_received = 0; p.heartbeat_age_ms = 999999; p.sequence_integrity = false;
   const r = validateSourceProof(p);
@@ -55,6 +57,14 @@ test('missing packet/heartbeat/integrity evidence fails closed', () => {
   assert.ok(r.errors.includes('NO_MARKET_MESSAGES'));
   assert.ok(r.errors.includes('HEARTBEAT_STALE'));
   assert.ok(r.errors.includes('SEQUENCE_INTEGRITY_FAIL'));
+});
+
+test('unverified entitlement or delayed data cannot satisfy real-time certification', () => {
+  const p = validProof(); p.entitlement_verified = false; p.delayed = true;
+  const r = validateSourceProof(p);
+  assert.equal(r.eligible, false);
+  assert.ok(r.errors.includes('ENTITLEMENT_NOT_VERIFIED'));
+  assert.ok(r.errors.includes('REALTIME_STATUS_NOT_VERIFIED'));
 });
 
 test('secret-like fields invalidate the evidence artifact', () => {
@@ -72,4 +82,11 @@ test('policy thresholds are deterministic and explicit', () => {
   assert.equal(pass.eligible, true);
   assert.equal(fail.eligible, false);
   assert.ok(fail.errors.includes('FRESHNESS_FAIL'));
+});
+
+test('disabling generic sequence requirement does not silently waive continuity proof', () => {
+  const p = validProof(); p.sequence_integrity = false;
+  const r = validateSourceProof(p, { require_sequence_integrity: false });
+  assert.equal(r.eligible, false);
+  assert.ok(r.errors.includes('ALTERNATIVE_CONTINUITY_POLICY_REQUIRED'));
 });
