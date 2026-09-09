@@ -1,4 +1,4 @@
-# MarketSphere Application Certification Runtime
+# MarketSphere Evidence Certification Runtime
 
 This is a maintainable, source-controlled certification runtime for MarketSphere. It is intentionally **read-only** with respect to capital authority.
 
@@ -12,9 +12,30 @@ Close the application-side certification gates before Schwab/CME credentials arr
 - `/api/readiness` machine-readable certification gates
 - `/api/sources` explicit source state, freshness, heartbeat and provenance fields
 - `/api/whoami` server-side Owner authentication using `MS_OWNER_TOKEN`
+- append-only JSON evidence records under `<DURABLE_STORE_PATH>/evidence`
+- SHA-256 per-record integrity plus chained manifest entries
+- `/api/evidence/integrity` integrity verification
+- `/api/evidence/manifest` bounded Owner-only evidence inventory
+- `/api/certification/recovery` restart/persistence proof
+- `/api/certification/snapshot` evidence-backed readiness/source snapshot
+- `/api/certification/bundle` downloadable certification bundle
 - synthetic plumbing self-test that is permanently labeled `SIMULATED`
-- durable boot/browser/auth/self-test evidence where a writable volume is mounted
 - hard deny for `/api/capital/*`; T0 remains locked
+
+## Evidence model
+
+Each evidence record carries:
+
+- evidence ID and UTC timestamp
+- event type and classification
+- request ID and actor class
+- app version, build SHA, deployment ID, instance ID and boot ID
+- previous evidence hash
+- governance boundary (`T0: LOCKED`, `capital_authority: NONE`)
+- event-specific payload
+- SHA-256 hash
+
+The manifest is append-only JSONL and preserves the hash chain. The integrity endpoint verifies file presence, record hashes, manifest hashes and chain continuity.
 
 ## Required production secret
 
@@ -31,9 +52,18 @@ npm test
 npm start
 ```
 
-Health: `/api/health`  
-Readiness: `/api/readiness`  
-Sources: `/api/sources`
+## Key endpoints
+
+- Health: `/api/health`
+- Readiness: `/api/readiness`
+- Sources: `/api/sources`
+- Owner identity: `/api/whoami`
+- Browser proof: `POST /api/browser-proof`
+- Evidence integrity: `/api/evidence/integrity`
+- Evidence manifest: `/api/evidence/manifest`
+- Recovery proof: `/api/certification/recovery`
+- Snapshot: `POST /api/certification/snapshot`
+- Certification bundle: `/api/certification/bundle`
 
 ## Governance
 
