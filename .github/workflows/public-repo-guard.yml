@@ -1,0 +1,104 @@
+name: Public Repository Release Guard
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-release-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Reject dangerous tracked filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          BAD="$(git ls-files | grep -Ei '(^|/)(\.env($|\.)|\.npmrc$|\.pypirc$|\.netrc$|id_rsa$|id_ed25519$|credentials(\.|$)|secrets(\.|$)|service-account.*\.json$)|\.(pem|key|p12|pfx|jks|keystore|ovpn|tfstate|tfvars)$' || true)"
+          if [ -n "$BAD" ]; then
+            echo '::error::Forbidden secret/credential/state file is tracked.'
+            printf '%s\n' "$BAD"
+            exit 1
+          fi
+
+      - name: Scan tracked text for high-confidence secret patterns
+        shell: python
+        run: |
+          import pathlib, re, subprocess, sys
+
+          patterns = [
+              re.compile(r"-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----"),
+              re.compile(r"(?<![A-Za-z0-9])ghp_[A-Za-z0-9]{30,}"),
+              re.compile(r"(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}"),
+              re.compile(r"(?<![A-Z0-9])AKIA[0-9A-Z]{16}(?![A-Z0-9])"),
+              re.compile(r"(?i)(?:api[_-]?key|client[_-]?secret|access[_-]?token|password)\s*[:=]\s*['\"][^'$<{\n][^'\"\n]{7,}['\"]"),
+          ]
+
+          failures = []
+          files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+          for name in files:
+              p = pathlib.Path(name)
+              try:
+                  raw = p.read_bytes()
+              except OSError:
+                  continue
+              if b"\x00" in raw:
+                  continue
+              text = raw.decode("utf-8", errors="ignore")
+              for pattern in patterns:
+                  if pattern.search(text):
+                      failures.append(name)
+                      break
+
+          if failures:
+              print("::error::Potential committed secret material detected in tracked text.")
+              for name in sorted(set(failures)):
+                  print(name)
+              sys.exit(1)
+
+          print("High-confidence tracked-text secret scan: PASS")
+
+      - name: Block newly introduced deploy/runtime archives
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          BASE=''
+          if [ "$EVENT_NAME" = 'pull_request' ]; then
+            BASE="$PR_BASE_SHA"
+          elif [ "$EVENT_NAME" = 'push' ] && [ -n "${BEFORE_SHA:-}" ] && [ "$BEFORE_SHA" != '0000000000000000000000000000000000000000' ]; then
+            BASE="$BEFORE_SHA"
+          fi
+
+          if [ -z "$BASE" ]; then
+            echo 'No comparison base available; archive-delta check skipped.'
+            exit 0
+          fi
+
+          ADDED="$(git diff --diff-filter=A --name-only "$BASE" HEAD | grep -Ei '\.(zip|tar|tgz|tar\.gz|7z)$' || true)"
+          if [ -n "$ADDED" ]; then
+            echo '::error::New binary/runtime archive added to public source repository. Publish through a controlled artifact/release channel instead.'
+            printf '%s\n' "$ADDED"
+            exit 1
+          fi
+
+      - name: Release-gate summary
+        run: |
+          {
+            echo '## Public Repository Release Guard'
+            echo '- Dangerous tracked filenames: PASS'
+            echo '- High-confidence tracked-text secret scan: PASS'
+            echo '- New deploy/runtime archives: PASS'
+            echo '- Action dependency: immutable full commit SHA'
+          } >> "$GITHUB_STEP_SUMMARY"
