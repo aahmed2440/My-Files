@@ -1,0 +1,8 @@
+# Repository ownership baseline
+# Enforcement becomes mandatory once branch/ruleset protection requires Code Owner review.
+
+* @aahmed2440
+/.github/ @aahmed2440
+/deploy/ @aahmed2440
+/SECURITY.md @aahmed2440
+/.gitignore @aahmed2440
