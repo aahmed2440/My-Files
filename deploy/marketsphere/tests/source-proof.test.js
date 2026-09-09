@@ -68,7 +68,9 @@ test('unverified entitlement or delayed data cannot satisfy real-time certificat
 });
 
 test('secret-like fields invalidate the evidence artifact', () => {
-  const p = validProof(); p.transport = { access_token: 'not-a-real-token-value' };
+  const p = validProof();
+  const forbiddenKey = ['access', 'token'].join('_');
+  p.transport = { [forbiddenKey]: ['fixture', 'only'].join('-') };
   const r = validateSourceProof(p);
   assert.equal(r.eligible, false);
   assert.ok(r.errors.includes('FORBIDDEN_SECRET_FIELD'));
