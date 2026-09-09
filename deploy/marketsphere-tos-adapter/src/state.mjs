@@ -88,7 +88,7 @@ export class FeedState {
   }
 
   derivedMode({ heartbeatStaleMs = 45000, dataStaleMs = 90000 } = {}) {
-    if (this.mode === 'DISABLED' || this.auth === 'NOT_CONFIGURED') return 'DISABLED';
+    if (this.auth === 'NOT_CONFIGURED') return 'DISABLED';
     if (this.auth === 'MISSING_ACCESS_TOKEN' || this.auth === 'STREAM_HOST_ALLOWLIST_REQUIRED') return 'AUTH_REQUIRED';
     if (this.auth === 'TOKEN_REJECTED' || this.auth === 'LOGIN_REJECTED') return 'AUTH_FAILED';
     if (this.socket !== 'CONNECTED') return this.auth === 'VERIFIED' ? 'DISCONNECTED' : this.mode;
