@@ -79,9 +79,27 @@ npm start
 - Snapshot: `POST /api/certification/snapshot`
 - Certification bundle: `/api/certification/bundle`
 
-## Verification target
+## Certification artifacts
 
-The repository test suite consists of the original certification tests plus a dedicated hardening suite. v4.7 adds tests for declaration-only non-certification, hostile-origin rejection, browser-proof rate limiting, audit-evidence throttling, synthetic degraded/stale/offline states, and hard-cap evidence backpressure.
+- `EVIDENCE_DOCTRINE.md` — evidence and governance rules
+- `LIVE_CERT_RUNBOOK.md` — exact isolated-live MS-L1 certification and rollback sequence
+- `CERTIFICATION_MATRIX.json` — machine-readable MS-L0 through MS-L4 gates/status
+
+## Verification status
+
+Latest verified branch head before this documentation refresh: `e2f95ef2436e2c251ce0f705f901980d4042984d`.
+
+Independent GitHub Actions results on that head:
+
+- **MarketSphere Certification:** PASS
+- **Public Repository Release Guard:** PASS
+- immutable checkout/setup actions: PASS
+- full-history high-confidence secret/path scan: PASS
+- MarketSphere certification + hardening suites: PASS
+
+The test corpus consists of the 10 baseline certification tests plus 5 focused hardening tests.
+
+These results certify the **source-controlled application/evidence implementation**, not a live browser deployment. MS-L1 remains `PENDING_LIVE_DEPLOYMENT_EVIDENCE` until the live runbook is completed on an isolated deployed surface with durable storage.
 
 ## Governance
 
