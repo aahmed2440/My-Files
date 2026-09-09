@@ -7,8 +7,34 @@
 *.pfx
 *.keystore
 *.jks
+*.ovpn
+*.mobileconfig
 secrets.*
 credentials.*
+service-account*.json
+
+# Local auth / package-manager credentials
+.npmrc
+.pypirc
+.netrc
+.docker/config.json
+.aws/
+.ssh/
+
+# Infrastructure state / local databases
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.sqlite
+*.sqlite3
+*.db
+
+# Private build/runtime bundles — publish through controlled release artifacts, not source commits
+*.zip
+*.tar
+*.tgz
+*.tar.gz
+*.7z
 
 # Python
 __pycache__/
