@@ -32,6 +32,12 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Emit runtime source fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum src/state.mjs src/adapter.mjs src/historian.mjs src/historian_adapter.mjs src/server.mjs
+
       - name: Syntax checks
         run: npm run check
 
