@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "source_id": "CME",
+  "provider": "CME Group",
+  "status": "AWAITING_CREDENTIALS_ENTITLEMENT_AND_ACCESS_PROFILE",
+  "certification_mode": "EMPIRICAL_ONLY",
+  "common_ms_l2_requirements": {
+    "credentials_present": true,
+    "entitlement_verified": true,
+    "reference_contract_resolved": true,
+    "authentication_verified": true,
+    "subscription_or_session_acknowledged": true,
+    "first_data_required": true,
+    "timestamp_integrity_required": true,
+    "freshness_required": true,
+    "continuity_integrity_required": true,
+    "reconnect_or_recovery_proof_required": true,
+    "provider_service_instrument_scope_required": true,
+    "empirical_provenance_required": true
+  },
+  "access_profiles": {
+    "DIRECT_MDP_3_0": {
+      "status": "CONDITIONAL_ON_ACTUAL_CME_ACCESS",
+      "dual_feed_observation_required": true,
+      "recovery_feed_behavior_required": true,
+      "packet_or_message_continuity_required": true,
+      "channel_configuration_provenance_required": true,
+      "production_readiness_requires_provider_certification_when_applicable": true
+    },
+    "API_OR_MANAGED_STREAM": {
+      "status": "CONDITIONAL_ON_ACTUAL_CME_ACCESS",
+      "provider_defined_heartbeat_required": true,
+      "provider_defined_continuity_method_required": true,
+      "reconnect_behavior_required": true
+    }
+  },
+  "cross_source_quorum": {
+    "required_for_ms_l2_single_source_certification": false,
+    "required_for_ms_l3_multi_source_intelligence": true,
+    "note": "Cross-source quorum is a MarketSphere MS-L3 control and must not be conflated with CME single-source transport/feed integrity."
+  },
+  "promotion": {
+    "automatic_live_promotion": false,
+    "valid_proof_result": "ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW"
+  },
+  "governance": {
+    "t0": "LOCKED",
+    "capital_authority": "NONE",
+    "owner_is_not_capital_authority": true
+  },
+  "notes": [
+    "Final CME transport-specific gates must be bound to the actual licensed access product and current provider documentation delivered with access.",
+    "Configuration variables are declarations, not empirical evidence.",
+    "CME single-source continuity/recovery is distinct from MarketSphere cross-source quorum.",
+    "No credential, entitlement token, session secret or account information belongs in evidence artifacts."
+  ],
+  "attribution": "Designed, Engineered, & Built By: Azad Ahmed - in a mission to solve intelligence at civilizational scale"
+}
