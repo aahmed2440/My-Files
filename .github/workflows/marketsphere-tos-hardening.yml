@@ -67,8 +67,10 @@ jobs:
           set -euo pipefail
           grep -q "SUBSCRIBED_AWAITING_DATA" src/state.mjs
           grep -q "ENTITLEMENT_PENDING" src/state.mjs
+          grep -q "TIMESTAMP_INTEGRITY_PENDING" src/state.mjs
           grep -q "CONTINUITY_PENDING" src/state.mjs
           grep -q "sequenceGaps = null" src/state.mjs
+          grep -q "timestampIntegrity = 'UNVERIFIED'" src/state.mjs
           grep -q "automatic_live_promotion:false" src/state.mjs
           if grep -q "setMode('LIVE')" src/adapter.mjs; then
             echo '::error::Adapter must not promote SUBS/data directly to LIVE.'
@@ -82,6 +84,8 @@ jobs:
           set -euo pipefail
           grep -q "required_for_governed_review" src/server.mjs
           grep -q "required_for_governed_review" qtrust_bridge.mjs
+          grep -q "timestamp_integrity=VERIFIED" src/server.mjs
+          grep -q "timestamp_integrity=VERIFIED" qtrust_bridge.mjs
           grep -q "automatic_live_promotion: false" src/server.mjs
           grep -q "automatic_live_promotion:false" qtrust_bridge.mjs
           if grep -q "required_for_live" src/server.mjs qtrust_bridge.mjs; then
