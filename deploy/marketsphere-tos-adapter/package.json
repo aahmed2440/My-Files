@@ -1,12 +1,12 @@
 {
   "name": "marketsphere-schwab-tos-adapter",
-  "version": "0.4.0-historian-cert",
+  "version": "0.5.0-credential-cert",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node src/server.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/server.mjs && node --check src/adapter.mjs && node --check src/state.mjs && node --check src/historian.mjs && node --check src/historian_adapter.mjs && node --check qtrust_bridge.mjs"
+    "check": "node --check src/server.mjs && node --check src/adapter.mjs && node --check src/state.mjs && node --check src/historian.mjs && node --check src/historian_adapter.mjs && node --check src/credential_guard.mjs && node --check qtrust_bridge.mjs"
   },
   "engines": { "node": ">=22" }
 }
