@@ -2,12 +2,13 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { evaluateSchwabCandidate, numberOrNull } = require('../lib/schwab-proof-normalizer');
+const { SUPPORTED_CANDIDATE_SCHEMA_VERSION, evaluateSchwabCandidate, numberOrNull } = require('../lib/schwab-proof-normalizer');
 
 function eligibleCandidate() {
   const firstSource = Date.parse('2026-09-09T11:00:00.000Z');
   const lastSource = Date.parse('2026-09-09T11:00:10.000Z');
   return {
+    candidate_schema_version: 1,
     classification: 'EMPIRICAL_MARKET_SOURCE_EVIDENCE_CANDIDATE',
     source: 'SCHWAB_TOS',
     provider: 'Charles Schwab Trader API',
@@ -70,8 +71,23 @@ test('eligible Schwab candidate normalizes and passes generic MS-L2 validator', 
   assert.equal(r.proof.instrument, 'SPY');
   assert.equal(r.proof.entitlement_verified, true);
   assert.equal(r.proof.delayed, false);
+  assert.equal(r.proof.adapter_candidate_schema_version, SUPPORTED_CANDIDATE_SCHEMA_VERSION);
   assert.equal(r.governance.automatic_live_promotion, false);
   assert.equal(r.governance.capital_authority, 'NONE');
+});
+
+test('unknown or missing candidate schema version fails closed', () => {
+  const missing = eligibleCandidate();
+  delete missing.candidate_schema_version;
+  const r1 = evaluateSchwabCandidate(missing);
+  assert.equal(r1.eligible, false);
+  assert.ok(r1.normalization_errors.includes('UNSUPPORTED_CANDIDATE_SCHEMA_VERSION'));
+
+  const future = eligibleCandidate();
+  future.candidate_schema_version = 999;
+  const r2 = evaluateSchwabCandidate(future);
+  assert.equal(r2.eligible, false);
+  assert.ok(r2.normalization_errors.includes('UNSUPPORTED_CANDIDATE_SCHEMA_VERSION'));
 });
 
 test('adapter candidate must itself be eligible even if normalized fields look valid', () => {
