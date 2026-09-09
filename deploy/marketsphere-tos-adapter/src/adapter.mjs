@@ -198,14 +198,14 @@ export class SchwabTosAdapter {
     const text = String(raw);
     if (Buffer.byteLength(text, 'utf8') > this.maxFrameBytes) {
       this.state.recordError('STREAM_FRAME_TOO_LARGE');
-      return;
+      return false;
     }
 
     let msg;
     try { msg = JSON.parse(text); }
-    catch { this.state.parseErrors += 1; this.state.recordError('JSON_PARSE_ERROR'); return; }
+    catch { this.state.parseErrors += 1; this.state.recordError('JSON_PARSE_ERROR'); return false; }
 
-    if (!this.enforceCredentialLease()) return;
+    if (!this.enforceCredentialLease()) return false;
 
     if (Array.isArray(msg.notify)) {
       for (const n of msg.notify) {
@@ -239,6 +239,7 @@ export class SchwabTosAdapter {
       this.state.data(d?.service ?? 'UNKNOWN', d?.timestamp, d?.content ?? [], sequence);
       this.state.setMode(this.state.derivedMode());
     }
+    return true;
   }
 
   stop() { this.stopped = true; try { this.ws?.close(); } catch {} }
