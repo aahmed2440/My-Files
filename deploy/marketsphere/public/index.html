@@ -12,7 +12,7 @@
       <div>
         <p class="eyebrow">MARKETSPHERE • EVIDENCE CERTIFICATION</p>
         <h1>Operational Readiness & Evidence Console</h1>
-        <p class="sub">Evidence-backed browser, identity, persistence, integrity and source-state certification. <strong>Capital authority: NONE.</strong></p>
+        <p class="sub">Evidence-backed browser, identity, persistence, integrity, failure-state and source certification. <strong>Capital authority: NONE.</strong></p>
       </div>
       <div id="overall" class="badge waiting">CHECKING</div>
     </header>
@@ -23,7 +23,7 @@
       <div class="panel-head">
         <div>
           <h2>Source Certification</h2>
-          <p>Real, simulated and unavailable sources are explicitly separated.</p>
+          <p>Real, simulated and unavailable sources are explicitly separated. Configuration declarations alone never certify a live source.</p>
         </div>
         <button id="refresh">Refresh evidence</button>
       </div>
@@ -38,15 +38,19 @@
     <section class="panel split">
       <div>
         <h2>Browser Proof</h2>
-        <p>This proves JavaScript → same-origin API → server → hashed evidence record.</p>
+        <p>Proves JavaScript → same-origin API → server → hashed evidence. Cross-origin requests and repeated evidence writes are constrained.</p>
         <button id="browserProof">Run browser proof</button>
         <pre id="browserResult">Not run in this session.</pre>
       </div>
       <div>
-        <h2>Owner Verification</h2>
-        <p>Owner token remains only in this page's memory. It is not stored in localStorage or sent anywhere except same-origin Owner endpoints.</p>
-        <input id="ownerToken" type="password" autocomplete="off" placeholder="Owner token (configure in Railway secret storage)" />
+        <h2>Owner Verification & Failure-State Harness</h2>
+        <p>Owner token remains only in page memory. It is never stored locally, and Owner identity never grants capital authority.</p>
+        <input id="ownerToken" type="password" autocomplete="off" placeholder="Owner token (secret storage only)" />
         <div class="button-row"><button id="ownerVerify">Verify owner</button><button id="selfTest">Run simulated plumbing test</button></div>
+        <div class="button-row">
+          <select id="simState"><option>HEALTHY</option><option>DEGRADED</option><option>STALE</option><option>OFFLINE</option><option>RESET</option></select>
+          <button id="simulate">Simulate source state</button>
+        </div>
         <pre id="ownerResult">Not verified.</pre>
       </div>
     </section>
@@ -55,11 +59,12 @@
       <div class="panel-head">
         <div>
           <h2>Evidence Ledger</h2>
-          <p>Append-only JSON evidence records are SHA-256 hashed and chained through the manifest. These controls require verified Owner access.</p>
+          <p>Append-only JSON evidence is SHA-256 hashed and chained. Capacity backpressure stops nonessential writes at the hard ceiling instead of deleting history.</p>
         </div>
       </div>
       <div class="button-row">
         <button id="integrityVerify">Verify integrity</button>
+        <button id="capacityCheck">Check capacity</button>
         <button id="snapshotCapture">Capture certification snapshot</button>
         <button id="bundleDownload">Download certification bundle</button>
       </div>
@@ -68,7 +73,7 @@
 
     <section class="panel warning-panel">
       <h2>Governance Boundary</h2>
-      <p><strong>T0 remains LOCKED.</strong> Owner identity does not confer capital authority. Synthetic evidence can validate application plumbing but can never promote CME, Schwab, or any other source to LIVE.</p>
+      <p><strong>T0 remains LOCKED.</strong> Owner identity does not confer capital authority. Synthetic evidence can validate application plumbing and failure behavior but can never promote CME, Schwab, or any other source to LIVE.</p>
     </section>
 
     <footer>Designed, Engineered, &amp; Built By: Azad Ahmed - in a mission to solve intelligence at civilizational scale</footer>
