@@ -1,10 +1,14 @@
 # MarketSphere Evidence Certification Runtime
 
-This is a maintainable, source-controlled certification runtime for MarketSphere. It is intentionally **read-only** with respect to capital authority.
+This is a maintainable, source-controlled certification runtime for MarketSphere. It is intentionally **read-only with respect to capital authority**.
+
+## Current version
+
+`4.7.0-evidence-hardening`
 
 ## Purpose
 
-Close the application-side certification gates before Schwab/CME credentials arrive:
+Close application/evidence certification gates before Schwab/CME credentials arrive:
 
 - browser delivery and same-origin interactivity proof
 - structured, sanitized request observability
@@ -16,34 +20,41 @@ Close the application-side certification gates before Schwab/CME credentials arr
 - SHA-256 per-record integrity plus chained manifest entries
 - `/api/evidence/integrity` integrity verification
 - `/api/evidence/manifest` bounded Owner-only evidence inventory
+- `/api/evidence/capacity` evidence-store utilization and hard-cap telemetry
 - `/api/certification/recovery` restart/persistence proof
 - `/api/certification/snapshot` evidence-backed readiness/source snapshot
 - `/api/certification/bundle` downloadable certification bundle
-- synthetic plumbing self-test that is permanently labeled `SIMULATED`
+- synthetic plumbing self-test permanently labeled `SIMULATED`
+- Owner-only synthetic `HEALTHY / DEGRADED / STALE / OFFLINE / RESET` failure-state harness
+- cross-origin rejection on browser-proof evidence writes
+- per-client throttles on unauthenticated evidence-producing paths
+- evidence-capacity backpressure: nonessential writes stop at the hard ceiling; history is not auto-deleted
 - hard deny for `/api/capital/*`; T0 remains locked
 
-## Evidence model
+## Evidence doctrine
 
-Each evidence record carries:
+Each evidence record carries an evidence ID, UTC timestamp, event type/classification, request/actor context, app/build/deployment/instance/boot identifiers, previous evidence hash, governance boundary, event payload, and SHA-256 hash.
 
-- evidence ID and UTC timestamp
-- event type and classification
-- request ID and actor class
-- app version, build SHA, deployment ID, instance ID and boot ID
-- previous evidence hash
-- governance boundary (`T0: LOCKED`, `capital_authority: NONE`)
-- event-specific payload
-- SHA-256 hash
+The manifest is append-only JSONL. Integrity verification checks file presence, record hash, manifest hash-chain continuity, and chain-head agreement with persisted state. The falsification suite alters an evidence file, requires integrity `FAIL`, restores the original bytes, and requires `PASS` again.
 
-The manifest is append-only JSONL and preserves the hash chain. The integrity endpoint verifies file presence, record hashes, manifest hashes and chain continuity. The test suite also performs a falsification test: it alters an evidence file, requires the verifier to report `FAIL`, restores the original bytes, and requires `PASS` again.
+## Critical source-certification rule
+
+**Environment/configuration declarations are not empirical market-data evidence.** Even when CME or Schwab declaration flags are set, this runtime does not mark those sources `LIVE` or `CERTIFIED` without empirical packet evidence from the real adapter certification path.
+
+## Abuse and resource hardening
+
+The evidence ledger itself is treated as a protected resource:
+
+- browser-proof writes are same-origin checked when an Origin header is present
+- repeated browser-proof writes are rate limited
+- unauthenticated Owner-denial evidence is independently throttled
+- repeated capital-denial evidence is throttled while the deny decision remains enforced
+- `MS_EVIDENCE_WARN_BYTES` and `MS_EVIDENCE_HARD_BYTES` control evidence-capacity thresholds
+- at the hard threshold, nonessential evidence writes return backpressure rather than deleting history
 
 ## Required production secret
 
-Configure `MS_OWNER_TOKEN` in Railway secret storage. Do **not** commit or paste the value into source control or chat.
-
-## Optional source-declaration variables
-
-The runtime recognizes existing CME declaration flags plus `SCHWAB_API_APPROVED`, `SCHWAB_OAUTH_VERIFIED`, and `SCHWAB_STREAM_VERIFIED`. Declarations do not substitute for empirical packet evidence.
+Configure `MS_OWNER_TOKEN` only in secret storage. Do **not** commit or paste the value into source control or chat.
 
 ## Run
 
@@ -61,9 +72,16 @@ npm start
 - Browser proof: `POST /api/browser-proof`
 - Evidence integrity: `/api/evidence/integrity`
 - Evidence manifest: `/api/evidence/manifest`
+- Evidence capacity: `/api/evidence/capacity`
 - Recovery proof: `/api/certification/recovery`
+- Simulated plumbing: `POST /api/certification/selftest`
+- Simulated failure state: `POST /api/certification/simulate-state`
 - Snapshot: `POST /api/certification/snapshot`
 - Certification bundle: `/api/certification/bundle`
+
+## Verification target
+
+The repository test suite consists of the original certification tests plus a dedicated hardening suite. v4.7 adds tests for declaration-only non-certification, hostile-origin rejection, browser-proof rate limiting, audit-evidence throttling, synthetic degraded/stale/offline states, and hard-cap evidence backpressure.
 
 ## Governance
 
