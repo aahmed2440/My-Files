@@ -62,13 +62,19 @@
       "normalizer": "lib/schwab-proof-normalizer.js",
       "unknown_candidate_versions_fail_closed": true,
       "automatic_live_promotion": false,
-      "current_external_state": "AWAITING_API_APPROVAL"
+      "external_dependencies": ["Trader API approval", "OAuth authorization", "real-time entitlement"]
     },
     "CME": {
       "profile": "profiles/cme-source-profile.json",
       "automatic_live_promotion": false,
-      "current_external_state": "AWAITING_CREDENTIALS_ENTITLEMENT"
+      "external_dependencies": ["credentials", "entitlement", "access-product-specific transport/session authorization"]
     }
+  },
+  "status_authority": {
+    "static_contract": "CERTIFICATION_MATRIX.json",
+    "current_runtime_status": ["/api/readiness", "/api/sources"],
+    "empirical_status_authority": "hashed evidence records and certification bundles",
+    "rule": "Volatile provider status must not be hard-coded into this static contract."
   },
   "governance": {
     "t0": "LOCKED",
