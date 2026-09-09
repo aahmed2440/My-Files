@@ -12,6 +12,18 @@ function boundedInt(value, fallback, min, max) {
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function nullableSequence(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
+
 function canonicalJson(value) {
   if (value === null) return 'null';
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -42,8 +54,8 @@ function normalizedRecord(record) {
     source: String(record?.source ?? 'UNKNOWN').slice(0, 64),
     provider: String(record?.provider ?? 'UNKNOWN').slice(0, 128),
     service: String(record?.service ?? 'UNKNOWN').slice(0, 128),
-    source_timestamp_ms: Number.isFinite(Number(record?.source_timestamp_ms)) ? Number(record.source_timestamp_ms) : null,
-    sequence: Number.isSafeInteger(Number(record?.sequence)) && Number(record.sequence) >= 0 ? Number(record.sequence) : null,
+    source_timestamp_ms: nullableNumber(record?.source_timestamp_ms),
+    sequence: nullableSequence(record?.sequence),
     received_at: typeof record?.received_at === 'string' ? record.received_at : nowIso(),
     payload: Array.isArray(record?.payload) ? record.payload : []
   };
