@@ -2,7 +2,7 @@ import http from 'node:http';
 import { HistorianSchwabTosAdapter } from './historian_adapter.mjs';
 
 const PORT = Number(process.env.PORT || 3000);
-const VERSION = '0.4.0-historian-cert';
+const VERSION = '0.5.0-credential-cert';
 const CANDIDATE_SCHEMA_VERSION = 1;
 const adapter = new HistorianSchwabTosAdapter();
 const heartbeatStaleMs = Number(process.env.SCHWAB_HEARTBEAT_STALE_MS || 45000);
@@ -14,6 +14,7 @@ const SOURCE_CONTRACT = {
   provider: 'Charles Schwab Trader API',
   evidence_classification: 'EMPIRICAL_MARKET_SOURCE_EVIDENCE_CANDIDATE',
   required_for_governed_review: [
+    'credential_state=READY',
     'auth=VERIFIED',
     'subscription=ACK',
     'socket=CONNECTED',
@@ -25,6 +26,14 @@ const SOURCE_CONTRACT = {
     'continuity=VERIFIED',
     'sequence_gaps=0 when provider continuity mechanism supports sequence semantics'
   ],
+  credential_lifecycle: {
+    explicit_expiry_required: true,
+    pre_expiry_safety_margin_required: true,
+    process_env_only: true,
+    persistence: 'PROHIBITED',
+    logging: 'PROHIBITED',
+    token_value_exposure: false
+  },
   historian: {
     opt_in: true,
     append_only: true,
@@ -58,11 +67,13 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/health/ready') {
     const feedGate = adapter.state.snapshot({ heartbeatStaleMs, dataStaleMs }).mode;
     const historian = adapter.historian.status();
+    const credential = adapter.credentialStatus();
     return json(res, 200, {
       status: 'ready',
       feed_gate: feedGate,
+      credential_state: credential.state,
       candidate_schema_version: CANDIDATE_SCHEMA_VERSION,
-      source_certification_eligible: feedGate === 'ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW',
+      source_certification_eligible: feedGate === 'ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW' && credential.state === 'READY',
       historian_enabled: historian.enabled,
       historian_durable_path_declared: historian.durable_path_declared,
       automatic_live_promotion: false
@@ -72,10 +83,12 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/v1/feed/proof') return json(res, adapter.state.firstDataProof ? 200 : 425, adapter.state.proof({ heartbeatStaleMs, dataStaleMs }));
   if (url.pathname === '/api/v1/feed/contract') return json(res, 200, SOURCE_CONTRACT);
   if (url.pathname === '/api/v1/historian/status') return json(res, 200, adapter.historian.status());
+  if (url.pathname === '/api/v1/credential/status') return json(res, 200, adapter.credentialStatus());
   return json(res, 404, { error: 'NOT_FOUND' });
 });
 
 server.listen(PORT, '0.0.0.0', async () => {
+  const credential = adapter.credentialStatus();
   console.log(JSON.stringify({
     event: 'adapter_started',
     port: PORT,
@@ -83,6 +96,8 @@ server.listen(PORT, '0.0.0.0', async () => {
     version: VERSION,
     candidate_schema_version: CANDIDATE_SCHEMA_VERSION,
     historian_enabled: adapter.historian.enabled,
+    credential_state: credential.state,
+    credential_value_exposed: false,
     trading_authority: 'NONE',
     automatic_live_promotion: false
   }));
