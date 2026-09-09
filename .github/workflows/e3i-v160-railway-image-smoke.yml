@@ -14,13 +14,15 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify exact-image Railway canary
+      - name: Verify exact-image Railway canary and rollback baseline
         shell: bash
         env:
           BASE_URL: https://e3i-v160-image-canary-production.up.railway.app
+          ROLLBACK_URL: https://e3i-beta-production.up.railway.app
         run: |
           set -euo pipefail
           base="${BASE_URL%/}"
+          rollback="${ROLLBACK_URL%/}"
 
           health_code="$(curl -sS -D /tmp/health.h -o /tmp/health.json -w '%{http_code}' "$base/health")"
           ready_code="$(curl -sS -D /tmp/ready.h -o /tmp/ready.json -w '%{http_code}' "$base/ready")"
@@ -40,10 +42,21 @@ jobs:
           grep -qi '^x-content-type-options: nosniff' /tmp/health.h
           grep -qi '^cache-control: no-store' /tmp/health.h
 
-          echo "health=$health_code"
-          echo "ready=$ready_code"
-          echo "beta=$beta_code"
-          echo "version=$version_code"
+          rollback_health="$(curl -sS -o /tmp/rollback-health.json -w '%{http_code}' "$rollback/health")"
+          rollback_version="$(curl -sS -o /tmp/rollback-version.json -w '%{http_code}' "$rollback/version")"
+          test "$rollback_health" = '200'
+          test "$rollback_version" = '200'
+          grep -q 'v156' /tmp/rollback-health.json
+          grep -q 'v156' /tmp/rollback-version.json
+
+          echo "canary_health=$health_code"
+          echo "canary_ready=$ready_code"
+          echo "canary_beta=$beta_code"
+          echo "canary_version=$version_code"
+          echo "rollback_health=$rollback_health"
+          echo "rollback_version=$rollback_version"
           cat /tmp/health.json
           cat /tmp/ready.json
           cat /tmp/version.json
+          cat /tmp/rollback-health.json
+          cat /tmp/rollback-version.json
