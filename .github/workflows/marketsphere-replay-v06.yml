@@ -1,0 +1,60 @@
+name: MarketSphere Replay Certification v0.6
+
+on:
+  push:
+    branches:
+      - "hardening/marketsphere-replay-v0.6-20260909"
+    paths:
+      - "deploy/marketsphere-replay-cert/**"
+      - ".github/workflows/marketsphere-replay-v06.yml"
+  pull_request:
+    paths:
+      - "deploy/marketsphere-replay-cert/**"
+      - ".github/workflows/marketsphere-replay-v06.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay-certification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/marketsphere-replay-cert
+    steps:
+      - name: Check out immutable source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up immutable Node action
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+      - name: Emit replay runtime fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum src/schema.mjs src/historian.mjs src/replay_engine.mjs src/server.mjs
+      - name: Syntax checks
+        run: npm run check
+      - name: Replay regression suite
+        run: npm test
+      - name: Verify replay-only authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -q "SYNTHETIC_CERT_REPLAY" src
+          grep -q "empirical_market_data_claim: false" src/replay_engine.mjs
+          grep -q "live_market_data_claim: false" src/replay_engine.mjs
+          grep -q "trading_authority: 'NONE'" src/server.mjs
+          grep -q "production_mutation: false" src/server.mjs
+          grep -q "automatic_live_promotion: false" src/server.mjs
+          if grep -R -E "SCHWAB_ACCESS_TOKEN|refresh_token|client_secret|Authorization:|authorization:" -ni src; then
+            echo '::error::Replay certification lane must contain no brokerage credentials.'
+            exit 1
+          fi
+          if grep -R -E "trading_authority: '(FULL|ORDER|TRADING)'|production_mutation: true|automatic_live_promotion: true" -n src; then
+            echo '::error::Authority escalation is prohibited.'
+            exit 1
+          fi
+          echo "MarketSphere v0.6 replay-only gates: PASS"
