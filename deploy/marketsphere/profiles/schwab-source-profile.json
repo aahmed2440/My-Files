@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "source_id": "SCHWAB",
+  "provider": "Charles Schwab Trader API",
+  "status": "AWAITING_AUTHORITATIVE_SEQUENCE_OR_CONTINUITY_METHOD",
+  "certification_mode": "EMPIRICAL_ONLY",
+  "adapter_candidate_contract": {
+    "supported_schema_version": 1,
+    "schema": "schemas/schwab-adapter-candidate-v1.schema.json",
+    "normalizer": "lib/schwab-proof-normalizer.js",
+    "unknown_versions_fail_closed": true
+  },
+  "requirements": {
+    "authentication": "VERIFIED",
+    "subscription": "ACK",
+    "connection": "CONNECTED",
+    "first_data_required": true,
+    "heartbeat_required": true,
+    "entitlement_verified_required": true,
+    "delayed_must_be": false,
+    "timestamp_integrity_required": true,
+    "freshness_required": true,
+    "sequence_integrity_required": true,
+    "reconnect_recovery_required": true,
+    "provider_service_instrument_scope_required": true
+  },
+  "continuity": {
+    "current_method": "UNVERIFIED",
+    "sequence_gaps_default_to_zero": false,
+    "alternative_method_may_be_used": true,
+    "alternative_method_requires_separate_governed_validation": true
+  },
+  "promotion": {
+    "automatic_live_promotion": false,
+    "valid_proof_result": "ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW"
+  },
+  "governance": {
+    "t0": "LOCKED",
+    "capital_authority": "NONE",
+    "owner_is_not_capital_authority": true
+  },
+  "notes": [
+    "Subscription acknowledgement is not first-data proof.",
+    "Authentication is not entitlement verification.",
+    "Delayed data is not eligible for a real-time certification claim.",
+    "Sequence/continuity integrity remains unverified until an authoritative provider mechanism or separately validated alternative is available.",
+    "Adapter evidence-candidate schema changes are versioned; unknown versions fail closed at the MarketSphere normalizer boundary."
+  ],
+  "attribution": "Designed, Engineered, & Built By: Azad Ahmed - in a mission to solve intelligence at civilizational scale"
+}

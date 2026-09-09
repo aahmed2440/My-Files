@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://marketsphere.local/schemas/evidence.schema.json",
+  "title": "MarketSphere Evidence Record",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "evidence_id",
+    "created_at",
+    "event_type",
+    "classification",
+    "actor_class",
+    "app",
+    "app_version",
+    "build_sha",
+    "deployment_id",
+    "instance_id",
+    "boot_id",
+    "previous_evidence_hash",
+    "governance",
+    "payload",
+    "sha256"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "evidence_id": { "type": "string", "pattern": "^EVD-[0-9]{8}-[A-Za-z0-9-]+$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "event_type": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "EMPIRICAL_APPLICATION_EVIDENCE",
+        "SIMULATED_APPLICATION_EVIDENCE",
+        "EMPIRICAL_SOURCE_EVIDENCE"
+      ]
+    },
+    "request_id": { "type": ["string", "null"] },
+    "actor_class": { "type": "string" },
+    "app": { "const": "MarketSphere" },
+    "app_version": { "type": "string" },
+    "build_sha": { "type": "string" },
+    "deployment_id": { "type": "string" },
+    "instance_id": { "type": "string" },
+    "boot_id": { "type": "string" },
+    "previous_evidence_hash": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      ]
+    },
+    "governance": {
+      "type": "object",
+      "required": ["t0", "capital_authority"],
+      "properties": {
+        "t0": { "const": "LOCKED" },
+        "capital_authority": { "const": "NONE" }
+      },
+      "additionalProperties": false
+    },
+    "payload": { "type": "object" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  },
+  "additionalProperties": false
+}

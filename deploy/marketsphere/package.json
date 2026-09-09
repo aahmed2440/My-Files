@@ -1,0 +1,13 @@
+{
+  "name": "marketsphere-certification-runtime",
+  "version": "4.7.0-evidence-hardening",
+  "private": true,
+  "description": "MarketSphere application/evidence certification runtime with provenance, integrity, failure-state simulation, bounded evidence writes, Owner RBAC and hard capital-authority separation.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": { "node": ">=22" },
+  "license": "UNLICENSED"
+}

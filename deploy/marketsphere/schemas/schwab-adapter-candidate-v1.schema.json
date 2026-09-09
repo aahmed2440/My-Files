@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://marketsphere.local/schema/schwab-adapter-candidate-v1.json",
+  "title": "MarketSphere Schwab/TOS Adapter Evidence Candidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate_schema_version",
+    "classification",
+    "source",
+    "provider",
+    "adapter_version",
+    "authentication",
+    "subscription",
+    "connection",
+    "first_data",
+    "last_data",
+    "last_heartbeat_at",
+    "last_source_timestamp_ms",
+    "last_receive_at",
+    "clock_skew_ms",
+    "events_received",
+    "data_messages",
+    "heartbeats",
+    "symbols_observed",
+    "realtime_status",
+    "entitlement",
+    "timestamp_integrity",
+    "continuity",
+    "sequence_gaps",
+    "heartbeat_age_ms",
+    "data_age_ms",
+    "state",
+    "eligible_for_governed_review",
+    "automatic_live_promotion",
+    "trading_authority"
+  ],
+  "properties": {
+    "candidate_schema_version": { "const": 1 },
+    "classification": { "const": "EMPIRICAL_MARKET_SOURCE_EVIDENCE_CANDIDATE" },
+    "source": { "const": "SCHWAB_TOS" },
+    "provider": { "const": "Charles Schwab Trader API" },
+    "adapter_version": { "type": "string", "minLength": 1 },
+    "authentication": { "type": "string", "minLength": 1 },
+    "subscription": { "type": "string", "minLength": 1 },
+    "connection": { "type": "string", "minLength": 1 },
+    "first_data": { "$ref": "#/$defs/frameProof" },
+    "last_data": { "$ref": "#/$defs/frameProof" },
+    "last_heartbeat_at": { "type": ["string", "null"], "format": "date-time" },
+    "last_source_timestamp_ms": { "type": ["number", "null"], "minimum": 0 },
+    "last_receive_at": { "type": ["string", "null"], "format": "date-time" },
+    "clock_skew_ms": { "type": ["number", "null"] },
+    "events_received": { "type": "integer", "minimum": 0 },
+    "data_messages": { "type": "integer", "minimum": 0 },
+    "heartbeats": { "type": "integer", "minimum": 0 },
+    "symbols_observed": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "uniqueItems": true
+    },
+    "realtime_status": {
+      "enum": ["UNVERIFIED", "REALTIME_OBSERVED", "PARTIAL_REALTIME_STATUS", "DELAYED_OBSERVED"]
+    },
+    "entitlement": { "type": "string", "minLength": 1 },
+    "timestamp_integrity": { "type": "string", "minLength": 1 },
+    "continuity": { "type": "string", "minLength": 1 },
+    "sequence_gaps": { "type": ["integer", "null"], "minimum": 0 },
+    "heartbeat_age_ms": { "type": ["number", "null"], "minimum": 0 },
+    "data_age_ms": { "type": ["number", "null"], "minimum": 0 },
+    "state": { "type": "string", "minLength": 1 },
+    "eligible_for_governed_review": { "type": "boolean" },
+    "automatic_live_promotion": { "const": false },
+    "trading_authority": { "const": "NONE" }
+  },
+  "$defs": {
+    "frameProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observedAt", "receivedAt", "sourceTimestampMs", "sha256", "service", "count", "symbols", "realtime", "delayed", "unknown"],
+      "properties": {
+        "observedAt": { "type": "string", "format": "date-time" },
+        "receivedAt": { "type": "string", "format": "date-time" },
+        "sourceTimestampMs": { "type": ["number", "null"], "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "service": { "type": "string", "minLength": 1 },
+        "count": { "type": "integer", "minimum": 0 },
+        "symbols": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "uniqueItems": true
+        },
+        "realtime": { "type": "integer", "minimum": 0 },
+        "delayed": { "type": "integer", "minimum": 0 },
+        "unknown": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
