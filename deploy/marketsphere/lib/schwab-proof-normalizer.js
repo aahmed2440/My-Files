@@ -13,6 +13,10 @@ function str(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function numberOrNull(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function normalizeInstrument(candidate, requested) {
   const explicit = str(requested);
   const lastSymbols = Array.isArray(candidate?.last_data?.symbols) ? candidate.last_data.symbols.filter(x => typeof x === 'string') : [];
@@ -72,12 +76,12 @@ function evaluateSchwabCandidate(candidate, options = {}) {
     source_ts: sourceTs,
     recv_ts: recvTs,
     heartbeat_at: heartbeatAt,
-    messages_received: Number(candidate.data_messages),
-    freshness_ms: Number(candidate.data_age_ms),
-    heartbeat_age_ms: Number(candidate.heartbeat_age_ms),
+    messages_received: numberOrNull(candidate.data_messages),
+    freshness_ms: numberOrNull(candidate.data_age_ms),
+    heartbeat_age_ms: numberOrNull(candidate.heartbeat_age_ms),
     timestamp_integrity: candidate.timestamp_integrity === 'VERIFIED',
     sequence_integrity: candidate.continuity === 'VERIFIED',
-    sequence_gaps: candidate.sequence_gaps,
+    sequence_gaps: numberOrNull(candidate.sequence_gaps),
     provenance: `Charles Schwab Trader API streamer -> MarketSphere Schwab/TOS adapter ${str(candidate.adapter_version) || 'unknown-version'}`,
     proof_window_start: firstDataAt,
     proof_window_end: recvTs,
@@ -110,4 +114,4 @@ function evaluateSchwabCandidate(candidate, options = {}) {
   };
 }
 
-module.exports = { evaluateSchwabCandidate, isoFromEpochMs };
+module.exports = { evaluateSchwabCandidate, isoFromEpochMs, numberOrNull };
