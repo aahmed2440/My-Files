@@ -3,11 +3,12 @@ let ownerToken = '';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtAge = (ms) => ms == null ? '—' : ms < 1000 ? `${Math.round(ms)} ms` : ms < 60000 ? `${(ms/1000).toFixed(1)} s` : `${(ms/60000).toFixed(1)} min`;
-const badgeClass = (v) => /PASS|CERTIFIED|LIVE|SIMULATED/.test(v) ? 'pass' : /FAIL|OFFLINE|UNAUTHORIZED/.test(v) ? 'fail' : 'waiting';
+const badgeClass = (v) => /PASS|CERTIFIED|LIVE|SIMULATED/.test(v) ? 'pass' : /FAIL|OFFLINE|FULL|UNAUTHORIZED/.test(v) ? 'fail' : 'waiting';
 
 async function api(path, opts={}) {
   const headers = { ...(opts.headers || {}) };
   if (ownerToken && opts.owner) headers.Authorization = `Bearer ${ownerToken}`;
+  if (opts.json) { headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(opts.json); }
   const res = await fetch(path, { ...opts, headers });
   let body; try { body = await res.json(); } catch { body = { error: 'INVALID_JSON' }; }
   return { ok: res.ok, status: res.status, body, requestId: res.headers.get('x-request-id'), disposition: res.headers.get('content-disposition') };
@@ -46,17 +47,26 @@ $('ownerVerify').addEventListener('click', async () => {
   await refresh();
 });
 $('selfTest').addEventListener('click', async () => {
-  if (!ownerToken) {
-    $('ownerResult').textContent = 'Verify owner first. Token is held only in page memory for this session.';
-    return;
-  }
+  if (!ownerToken) { $('ownerResult').textContent = 'Verify owner first. Token is held only in page memory for this session.'; return; }
   const r = await api('/api/certification/selftest', { method: 'POST', owner: true });
+  $('ownerResult').textContent = JSON.stringify(r.body, null, 2);
+  await refresh();
+});
+$('simulate').addEventListener('click', async () => {
+  if (!ownerToken) { $('ownerResult').textContent = 'Verify owner first.'; return; }
+  const r = await api('/api/certification/simulate-state', { method: 'POST', owner: true, json: { state: $('simState').value } });
   $('ownerResult').textContent = JSON.stringify(r.body, null, 2);
   await refresh();
 });
 $('integrityVerify').addEventListener('click', async () => {
   if (!ownerToken) { $('evidenceResult').textContent = 'Verify owner first.'; return; }
   const r = await api('/api/evidence/integrity', { owner: true });
+  $('evidenceResult').textContent = JSON.stringify(r.body, null, 2);
+  await refresh();
+});
+$('capacityCheck').addEventListener('click', async () => {
+  if (!ownerToken) { $('evidenceResult').textContent = 'Verify owner first.'; return; }
+  const r = await api('/api/evidence/capacity', { owner: true });
   $('evidenceResult').textContent = JSON.stringify(r.body, null, 2);
   await refresh();
 });
