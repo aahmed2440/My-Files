@@ -1,0 +1,29 @@
+name: MarketSphere Certification
+
+on:
+  push:
+    branches:
+      - marketsphere-cert-v4.5
+    paths:
+      - 'deploy/marketsphere/**'
+      - '.github/workflows/marketsphere-cert.yml'
+  pull_request:
+    paths:
+      - 'deploy/marketsphere/**'
+      - '.github/workflows/marketsphere-cert.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/marketsphere
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
