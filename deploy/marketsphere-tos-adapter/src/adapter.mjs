@@ -1,4 +1,5 @@
 import { FeedState } from './state.mjs';
+import { CredentialGuard } from './credential_guard.mjs';
 
 const PREF_URL = 'https://api.schwabapi.com/trader/v1/userPreference';
 const DEFAULT_PREF_RESPONSE_MAX_BYTES = 512 * 1024;
@@ -9,7 +10,6 @@ function envList(name, fallback = '') {
   return (process.env[name] ?? fallback).split(',').map(x => x.trim()).filter(Boolean);
 }
 function isEnabled() { return /^true$/i.test(process.env.SCHWAB_TOS_ENABLED ?? 'false'); }
-function accessToken() { return (process.env.SCHWAB_ACCESS_TOKEN ?? '').trim(); }
 function requestIdFactory() { let n = 0; return () => String(++n); }
 function fail(code) { const e = new Error(code); e.code = code; return e; }
 function normalizeHost(value) { return String(value ?? '').trim().toLowerCase().replace(/^\.+|\.+$/g, ''); }
@@ -24,6 +24,10 @@ function preferenceResponseMaxBytes() {
 }
 function streamFrameMaxBytes() {
   return boundedBytes(process.env.SCHWAB_MAX_FRAME_BYTES, DEFAULT_STREAM_FRAME_MAX_BYTES, 64 * 1024, 8 * 1024 * 1024);
+}
+function credentialMode(state) {
+  if (state === 'TOKEN_EXPIRED') return 'AUTH_FAILED';
+  return 'AUTH_REQUIRED';
 }
 
 export function validateStreamerUrl(raw, allowedHosts = streamHostAllowlist()) {
@@ -80,10 +84,11 @@ export async function readJsonBounded(response, maxBytes = preferenceResponseMax
 }
 
 export class SchwabTosAdapter {
-  constructor() {
+  constructor({ credentialGuard } = {}) {
     this.symbols = envList('SCHWAB_TOS_SYMBOLS', 'SPY,QQQ');
     this.services = envList('SCHWAB_TOS_SERVICES', 'LEVELONE_EQUITIES');
     this.state = new FeedState({ symbols: this.symbols, services: this.services });
+    this.credentials = credentialGuard ?? new CredentialGuard();
     this.ws = null;
     this.stopped = false;
     this.nextRequestId = requestIdFactory();
@@ -93,9 +98,23 @@ export class SchwabTosAdapter {
     this.fields = process.env.SCHWAB_TOS_FIELDS ?? '0,1,2,3,8,10,11,12,13,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42';
   }
 
+  credentialStatus() {
+    return this.credentials.status();
+  }
+
+  applyCredentialFailure(code) {
+    const state = String(code || 'CREDENTIAL_REJECTED');
+    this.state.setAuth(state);
+    this.state.setMode(credentialMode(state));
+    this.state.setSocket('DISCONNECTED');
+    this.state.setSubscription('NOT_SUBSCRIBED');
+    this.state.recordError(state);
+  }
+
   async start() {
     if (!isEnabled()) { this.state.setMode('DISABLED'); this.state.setAuth('NOT_CONFIGURED'); return; }
-    if (!accessToken()) { this.state.setMode('AUTH_REQUIRED'); this.state.setAuth('MISSING_ACCESS_TOKEN'); return; }
+    const credential = this.credentialStatus();
+    if (credential.state !== 'READY') { this.applyCredentialFailure(credential.state); return; }
     if (!streamHostAllowlist().length) { this.state.setMode('AUTH_REQUIRED'); this.state.setAuth('STREAM_HOST_ALLOWLIST_REQUIRED'); return; }
     this.loop().catch(() => this.state.recordError('ADAPTER_LOOP_FAILED'));
   }
@@ -103,8 +122,13 @@ export class SchwabTosAdapter {
   async loop() {
     while (!this.stopped) {
       try { await this.connectOnce(); this.reconnectDelayMs = 1000; }
-      catch (err) { this.state.recordError(err?.code || err?.name || 'CONNECT_FAILED'); this.state.setMode('DISCONNECTED'); this.state.setSocket('DISCONNECTED'); }
+      catch (err) {
+        const code = err?.code || err?.name || 'CONNECT_FAILED';
+        if (/^(MISSING_ACCESS_TOKEN|TOKEN_)/.test(code)) this.applyCredentialFailure(code);
+        else { this.state.recordError(code); this.state.setMode('DISCONNECTED'); this.state.setSocket('DISCONNECTED'); }
+      }
       if (this.stopped) break;
+      if (['AUTH_REQUIRED','AUTH_FAILED'].includes(this.state.mode)) break;
       this.state.reconnects += 1;
       await sleep(this.reconnectDelayMs + Math.floor(Math.random() * 300));
       this.reconnectDelayMs = Math.min(this.maxReconnectMs, this.reconnectDelayMs * 2);
@@ -113,7 +137,8 @@ export class SchwabTosAdapter {
 
   async getStreamerInfo() {
     this.state.setMode('AUTHENTICATING');
-    const response = await fetch(PREF_URL, { method:'GET', headers:{ accept:'application/json', authorization:`Bearer ${accessToken()}` }, signal:AbortSignal.timeout(10000) });
+    const token = this.credentials.requireAccessToken();
+    const response = await fetch(PREF_URL, { method:'GET', headers:{ accept:'application/json', authorization:`Bearer ${token}` }, signal:AbortSignal.timeout(10000) });
     if (response.status === 401 || response.status === 403) { this.state.setAuth('TOKEN_REJECTED'); throw fail('AUTH_REJECTED'); }
     if (!response.ok) throw fail(`PREFERENCE_HTTP_${response.status}`);
     const body = await readJsonBounded(response);
@@ -130,10 +155,14 @@ export class SchwabTosAdapter {
       let settled = false;
       const ws = new WebSocket(info.streamerSocketUrl); this.ws = ws;
       const failConnection = (code) => { if (!settled) { settled = true; reject(fail(code)); } };
-      ws.addEventListener('open', () => { this.state.setSocket('CONNECTED'); this.sendLogin(info); });
+      ws.addEventListener('open', () => {
+        this.state.setSocket('CONNECTED');
+        try { this.sendLogin(info); }
+        catch (err) { this.applyCredentialFailure(err?.code || 'CREDENTIAL_REJECTED'); try { ws.close(); } catch {} failConnection(err?.code || 'CREDENTIAL_REJECTED'); }
+      });
       ws.addEventListener('message', (event) => this.onMessage(event.data, info));
       ws.addEventListener('error', () => failConnection('WEBSOCKET_ERROR'));
-      ws.addEventListener('close', () => { this.state.setSocket('DISCONNECTED'); this.state.setSubscription('NOT_SUBSCRIBED'); this.state.setMode('DISCONNECTED'); if (!settled) { settled = true; resolve(); } });
+      ws.addEventListener('close', () => { this.state.setSocket('DISCONNECTED'); this.state.setSubscription('NOT_SUBSCRIBED'); if (!['AUTH_REQUIRED','AUTH_FAILED'].includes(this.state.mode)) this.state.setMode('DISCONNECTED'); if (!settled) { settled = true; resolve(); } });
     });
   }
 
@@ -144,8 +173,9 @@ export class SchwabTosAdapter {
   }
 
   sendLogin(info) {
+    const token = this.credentials.requireAccessToken();
     this.state.setAuth('LOGIN_SENT');
-    this.send(this.request('ADMIN','LOGIN',{ Authorization:accessToken(), SchwabClientChannel:info.schwabClientChannel, SchwabClientFunctionId:info.schwabClientFunctionId },info));
+    this.send(this.request('ADMIN','LOGIN',{ Authorization:token, SchwabClientChannel:info.schwabClientChannel, SchwabClientFunctionId:info.schwabClientFunctionId },info));
   }
 
   subscribe(info) {
