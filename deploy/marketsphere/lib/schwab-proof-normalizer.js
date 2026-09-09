@@ -3,6 +3,14 @@
 const { CERT_CLASS, forbiddenPaths, validateSourceProof } = require('./source-proof');
 const SUPPORTED_CANDIDATE_SCHEMA_VERSION = 1;
 
+const TOP_LEVEL_KEYS_V1 = new Set([
+  'candidate_schema_version','classification','source','provider','adapter_version','authentication','subscription','connection',
+  'first_data','last_data','last_heartbeat_at','last_source_timestamp_ms','last_receive_at','clock_skew_ms','events_received',
+  'data_messages','heartbeats','symbols_observed','realtime_status','entitlement','timestamp_integrity','continuity','sequence_gaps',
+  'heartbeat_age_ms','data_age_ms','state','eligible_for_governed_review','automatic_live_promotion','trading_authority'
+]);
+const FRAME_KEYS_V1 = new Set(['observedAt','receivedAt','sourceTimestampMs','sha256','service','count','symbols','realtime','delayed','unknown']);
+
 function isoFromEpochMs(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -16,6 +24,18 @@ function str(value) {
 
 function numberOrNull(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parseIsoMs(value) {
+  const s = str(value);
+  if (!s) return null;
+  const n = Date.parse(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function unknownKeys(obj, allowed, prefix) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return [];
+  return Object.keys(obj).filter(k => !allowed.has(k)).map(k => `${prefix}.${k}`);
 }
 
 function normalizeInstrument(candidate, requested) {
@@ -44,6 +64,14 @@ function evaluateSchwabCandidate(candidate, options = {}) {
 
   const forbidden = forbiddenPaths(candidate);
   if (forbidden.length) normalizationErrors.push('FORBIDDEN_SECRET_FIELD_IN_CANDIDATE');
+
+  const unknownCandidatePaths = [
+    ...unknownKeys(candidate, TOP_LEVEL_KEYS_V1, 'candidate'),
+    ...unknownKeys(candidate.first_data, FRAME_KEYS_V1, 'candidate.first_data'),
+    ...unknownKeys(candidate.last_data, FRAME_KEYS_V1, 'candidate.last_data')
+  ];
+  if (unknownCandidatePaths.length) normalizationErrors.push('UNKNOWN_CANDIDATE_FIELD');
+
   if (candidate.candidate_schema_version !== SUPPORTED_CANDIDATE_SCHEMA_VERSION) normalizationErrors.push('UNSUPPORTED_CANDIDATE_SCHEMA_VERSION');
   if (candidate.classification !== 'EMPIRICAL_MARKET_SOURCE_EVIDENCE_CANDIDATE') normalizationErrors.push('WRONG_CANDIDATE_CLASSIFICATION');
   if (candidate.source !== 'SCHWAB_TOS') normalizationErrors.push('WRONG_SOURCE');
@@ -60,6 +88,21 @@ function evaluateSchwabCandidate(candidate, options = {}) {
   const heartbeatAt = str(candidate?.last_heartbeat_at);
   const service = str(candidate?.last_data?.service) || str(candidate?.first_data?.service);
   const delayed = candidate.realtime_status === 'REALTIME_OBSERVED' ? false : candidate.realtime_status === 'DELAYED_OBSERVED' ? true : null;
+
+  const nowMs = Number.isFinite(options.now_ms) ? Number(options.now_ms) : Date.now();
+  const maxFutureSkewMs = Number.isFinite(options.max_future_skew_ms) ? Math.max(0, Number(options.max_future_skew_ms)) : 2000;
+  const sourceMs = parseIsoMs(sourceTs);
+  const recvMs = parseIsoMs(recvTs);
+  const heartbeatMs = parseIsoMs(heartbeatAt);
+
+  if (sourceMs !== null && sourceMs > nowMs + maxFutureSkewMs) normalizationErrors.push('SOURCE_TIMESTAMP_IN_FUTURE');
+  if (recvMs !== null && recvMs > nowMs + maxFutureSkewMs) normalizationErrors.push('RECEIVE_TIMESTAMP_IN_FUTURE');
+  if (heartbeatMs !== null && heartbeatMs > nowMs + maxFutureSkewMs) normalizationErrors.push('HEARTBEAT_TIMESTAMP_IN_FUTURE');
+  if (sourceMs !== null && recvMs !== null && sourceMs > recvMs + maxFutureSkewMs) normalizationErrors.push('SOURCE_TIMESTAMP_AFTER_RECEIVE');
+
+  const freshnessMs = sourceMs === null ? null : Math.max(0, nowMs - sourceMs);
+  const heartbeatAgeMs = heartbeatMs === null ? null : Math.max(0, nowMs - heartbeatMs);
+  const transportLatencyMs = sourceMs === null || recvMs === null ? null : recvMs - sourceMs;
 
   const proof = {
     classification: CERT_CLASS,
@@ -79,14 +122,17 @@ function evaluateSchwabCandidate(candidate, options = {}) {
     recv_ts: recvTs,
     heartbeat_at: heartbeatAt,
     messages_received: numberOrNull(candidate.data_messages),
-    freshness_ms: numberOrNull(candidate.data_age_ms),
-    heartbeat_age_ms: numberOrNull(candidate.heartbeat_age_ms),
+    freshness_ms: freshnessMs,
+    heartbeat_age_ms: heartbeatAgeMs,
     timestamp_integrity: candidate.timestamp_integrity === 'VERIFIED',
     sequence_integrity: candidate.continuity === 'VERIFIED',
     sequence_gaps: numberOrNull(candidate.sequence_gaps),
     provenance: `Charles Schwab Trader API streamer -> MarketSphere Schwab/TOS adapter ${str(candidate.adapter_version) || 'unknown-version'}`,
     proof_window_start: firstDataAt,
     proof_window_end: recvTs,
+    transport_latency_ms: transportLatencyMs,
+    adapter_reported_data_age_ms: numberOrNull(candidate.data_age_ms),
+    adapter_reported_heartbeat_age_ms: numberOrNull(candidate.heartbeat_age_ms),
     adapter_candidate_schema_version: candidate.candidate_schema_version,
     adapter_candidate_state: candidate.state,
     adapter_candidate_eligible: candidate.eligible_for_governed_review === true,
@@ -111,10 +157,19 @@ function evaluateSchwabCandidate(candidate, options = {}) {
     decision: eligible ? 'ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW' : 'NOT_ELIGIBLE',
     normalization_errors: [...new Set(normalizationErrors)],
     forbidden_candidate_paths: forbidden,
+    unknown_candidate_paths: unknownCandidatePaths,
     proof,
     validation,
+    policy: { max_future_skew_ms: maxFutureSkewMs, evaluation_time: new Date(nowMs).toISOString() },
     governance: { automatic_live_promotion: false, capital_authority: 'NONE', t0: 'LOCKED' }
   };
 }
 
-module.exports = { SUPPORTED_CANDIDATE_SCHEMA_VERSION, evaluateSchwabCandidate, isoFromEpochMs, numberOrNull };
+module.exports = {
+  SUPPORTED_CANDIDATE_SCHEMA_VERSION,
+  TOP_LEVEL_KEYS_V1,
+  FRAME_KEYS_V1,
+  evaluateSchwabCandidate,
+  isoFromEpochMs,
+  numberOrNull
+};
