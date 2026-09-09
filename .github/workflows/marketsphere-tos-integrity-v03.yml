@@ -32,6 +32,12 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Verify certified source hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c SOURCE_SHA256SUMS
+
       - name: Syntax checks
         run: npm run check
 
