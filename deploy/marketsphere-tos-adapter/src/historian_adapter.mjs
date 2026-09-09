@@ -14,23 +14,23 @@ function nullableSequence(value) {
 }
 
 export class HistorianSchwabTosAdapter extends SchwabTosAdapter {
-  constructor({ historian } = {}) {
-    super();
+  constructor({ historian, credentialGuard } = {}) {
+    super({ credentialGuard });
     this.historian = historian ?? new MarketHistorian();
   }
 
   onMessage(raw, info) {
-    super.onMessage(raw, info);
-    if (!this.historian.enabled) return;
+    const accepted = super.onMessage(raw, info);
+    if (!accepted || !this.historian.enabled) return false;
 
     const text = String(raw);
-    if (Buffer.byteLength(text, 'utf8') > this.maxFrameBytes) return;
+    if (Buffer.byteLength(text, 'utf8') > this.maxFrameBytes) return false;
 
     let msg;
     try { msg = JSON.parse(text); }
-    catch { return; }
+    catch { return false; }
 
-    if (!Array.isArray(msg.data)) return;
+    if (!Array.isArray(msg.data)) return true;
     for (const d of msg.data) {
       const record = {
         source: this.state.source,
@@ -43,6 +43,7 @@ export class HistorianSchwabTosAdapter extends SchwabTosAdapter {
       };
       this.historian.append(record).catch(() => this.state.recordError('HISTORIAN_APPEND_FAILED'));
     }
+    return true;
   }
 
   async flushHistorian() {
