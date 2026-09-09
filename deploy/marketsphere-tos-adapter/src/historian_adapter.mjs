@@ -1,6 +1,18 @@
 import { SchwabTosAdapter } from './adapter.mjs';
 import { MarketHistorian } from './historian.mjs';
 
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function nullableSequence(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+}
+
 export class HistorianSchwabTosAdapter extends SchwabTosAdapter {
   constructor({ historian } = {}) {
     super();
@@ -20,14 +32,12 @@ export class HistorianSchwabTosAdapter extends SchwabTosAdapter {
 
     if (!Array.isArray(msg.data)) return;
     for (const d of msg.data) {
-      const timestamp = Number(d?.timestamp);
-      const sequence = Number(d?.sequence ?? d?.seq);
       const record = {
         source: this.state.source,
         provider: this.state.provider,
         service: d?.service ?? 'UNKNOWN',
-        source_timestamp_ms: Number.isFinite(timestamp) ? timestamp : null,
-        sequence: Number.isSafeInteger(sequence) && sequence >= 0 ? sequence : null,
+        source_timestamp_ms: nullableNumber(d?.timestamp),
+        sequence: nullableSequence(d?.sequence ?? d?.seq),
         received_at: new Date().toISOString(),
         payload: Array.isArray(d?.content) ? d.content : []
       };
