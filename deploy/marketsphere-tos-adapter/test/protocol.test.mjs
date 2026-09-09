@@ -30,6 +30,8 @@ test('subscription ack cannot become LIVE and empirical gates remain fail-closed
   assert.equal(a.state.proof().eligible_for_governed_review, false);
 
   a.state.setEntitlement('VERIFIED');
+  assert.equal(a.state.derivedMode(), 'TIMESTAMP_INTEGRITY_PENDING');
+  a.state.setTimestampIntegrity('VERIFIED');
   assert.equal(a.state.derivedMode(), 'CONTINUITY_PENDING');
   a.state.setContinuity('VERIFIED', { sequenceGaps: 0 });
   assert.equal(a.state.derivedMode(), 'ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW');
@@ -47,6 +49,26 @@ test('delayed payload cannot satisfy real-time state', () => {
   assert.equal(a.state.realtimeStatus, 'DELAYED_OBSERVED');
   assert.equal(a.state.snapshot().mode, 'DELAYED_DATA');
   assert.equal(a.state.proof().eligible_for_governed_review, false);
+});
+
+test('candidate proof exposes sanitized timestamps and transport state', () => {
+  const a = new SchwabTosAdapter();
+  a.state.setAuth('VERIFIED');
+  a.state.setSocket('CONNECTED');
+  a.state.setSubscription('ACK');
+  const now = Date.now();
+  a.onMessage(JSON.stringify({notify:[{heartbeat:String(now)}],data:[{service:'LEVELONE_EQUITIES',timestamp:now,content:[{key:'SPY',delayed:false}]}]}), {});
+  const proof = a.state.proof();
+  assert.equal(proof.authentication, 'VERIFIED');
+  assert.equal(proof.subscription, 'ACK');
+  assert.equal(proof.connection, 'CONNECTED');
+  assert.equal(proof.timestamp_integrity, 'UNVERIFIED');
+  assert.equal(proof.first_data.sourceTimestampMs, now);
+  assert.deepEqual(proof.first_data.symbols, ['SPY']);
+  assert.equal(typeof proof.last_receive_at, 'string');
+  const serialized = JSON.stringify(proof).toLowerCase();
+  assert.equal(serialized.includes('access_token'), false);
+  assert.equal(serialized.includes('authorization'), false);
 });
 
 test('login nack fails closed', () => {
