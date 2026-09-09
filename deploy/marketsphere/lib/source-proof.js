@@ -26,6 +26,8 @@ function forbiddenPaths(value, prefix = '', out = []) {
 function validateSourceProof(proof, policy = {}) {
   const maxFreshnessMs = Number(policy.max_freshness_ms ?? 15000);
   const maxHeartbeatAgeMs = Number(policy.max_heartbeat_age_ms ?? 45000);
+  const requireSequenceIntegrity = policy.require_sequence_integrity !== false;
+  const requireRealtime = policy.require_realtime !== false;
   const errors = [];
   const forbidden = forbiddenPaths(proof);
 
@@ -39,6 +41,8 @@ function validateSourceProof(proof, policy = {}) {
   if (typeof proof.provider !== 'string' || !proof.provider.trim()) errors.push('PROVIDER_REQUIRED');
   if (typeof proof.service !== 'string' || !proof.service.trim()) errors.push('SERVICE_REQUIRED');
   if (typeof proof.instrument !== 'string' || !proof.instrument.trim()) errors.push('INSTRUMENT_REQUIRED');
+  if (proof.entitlement_verified !== true) errors.push('ENTITLEMENT_NOT_VERIFIED');
+  if (requireRealtime && proof.delayed !== false) errors.push('REALTIME_STATUS_NOT_VERIFIED');
   if (proof.authentication !== 'VERIFIED') errors.push('AUTH_NOT_VERIFIED');
   if (proof.subscription !== 'ACK') errors.push('SUBSCRIPTION_NOT_ACK');
   if (proof.connection !== 'CONNECTED') errors.push('CONNECTION_NOT_CONNECTED');
@@ -50,9 +54,13 @@ function validateSourceProof(proof, policy = {}) {
   if (!finiteNonNegative(proof.freshness_ms) || proof.freshness_ms > maxFreshnessMs) errors.push('FRESHNESS_FAIL');
   if (!finiteNonNegative(proof.heartbeat_age_ms) || proof.heartbeat_age_ms > maxHeartbeatAgeMs) errors.push('HEARTBEAT_STALE');
   if (proof.timestamp_integrity !== true) errors.push('TIMESTAMP_INTEGRITY_FAIL');
-  if (proof.sequence_integrity !== true) errors.push('SEQUENCE_INTEGRITY_FAIL');
-  if (!finiteNonNegative(proof.sequence_gaps)) errors.push('SEQUENCE_GAPS_INVALID');
-  if (proof.sequence_gaps !== 0) errors.push('SEQUENCE_GAPS_PRESENT');
+  if (requireSequenceIntegrity) {
+    if (proof.sequence_integrity !== true) errors.push('SEQUENCE_INTEGRITY_FAIL');
+    if (!finiteNonNegative(proof.sequence_gaps)) errors.push('SEQUENCE_GAPS_INVALID');
+    if (proof.sequence_gaps !== 0) errors.push('SEQUENCE_GAPS_PRESENT');
+  } else if (proof.sequence_integrity !== true) {
+    errors.push('ALTERNATIVE_CONTINUITY_POLICY_REQUIRED');
+  }
   if (typeof proof.provenance !== 'string' || proof.provenance.trim().length < 8) errors.push('PROVENANCE_REQUIRED');
   if (typeof proof.proof_window_start !== 'string' || !parseIso(proof.proof_window_start)) errors.push('PROOF_WINDOW_START_REQUIRED');
   if (typeof proof.proof_window_end !== 'string' || !parseIso(proof.proof_window_end)) errors.push('PROOF_WINDOW_END_REQUIRED');
@@ -68,7 +76,12 @@ function validateSourceProof(proof, policy = {}) {
     decision: valid ? 'ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW' : 'NOT_ELIGIBLE',
     errors: [...new Set(errors)],
     forbidden_paths: forbidden,
-    policy: { max_freshness_ms: maxFreshnessMs, max_heartbeat_age_ms: maxHeartbeatAgeMs },
+    policy: {
+      max_freshness_ms: maxFreshnessMs,
+      max_heartbeat_age_ms: maxHeartbeatAgeMs,
+      require_sequence_integrity: requireSequenceIntegrity,
+      require_realtime: requireRealtime
+    },
     governance: { automatic_live_promotion: false, capital_authority: 'NONE', t0: 'LOCKED' }
   };
 }
