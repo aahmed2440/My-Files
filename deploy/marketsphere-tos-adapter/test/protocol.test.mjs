@@ -51,7 +51,7 @@ test('delayed payload cannot satisfy real-time state', () => {
   assert.equal(a.state.proof().eligible_for_governed_review, false);
 });
 
-test('candidate proof exposes sanitized timestamps and transport state', () => {
+test('candidate proof is versioned and exposes sanitized timestamps and transport state', () => {
   const a = new SchwabTosAdapter();
   a.state.setAuth('VERIFIED');
   a.state.setSocket('CONNECTED');
@@ -59,6 +59,8 @@ test('candidate proof exposes sanitized timestamps and transport state', () => {
   const now = Date.now();
   a.onMessage(JSON.stringify({notify:[{heartbeat:String(now)}],data:[{service:'LEVELONE_EQUITIES',timestamp:now,content:[{key:'SPY',delayed:false}]}]}), {});
   const proof = a.state.proof();
+  assert.equal(proof.candidate_schema_version, 1);
+  assert.equal(a.state.snapshot().candidate_schema_version, 1);
   assert.equal(proof.authentication, 'VERIFIED');
   assert.equal(proof.subscription, 'ACK');
   assert.equal(proof.connection, 'CONNECTED');
