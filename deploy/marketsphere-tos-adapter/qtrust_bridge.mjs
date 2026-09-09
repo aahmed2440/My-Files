@@ -9,7 +9,21 @@ const TRUST_FORWARD_HEADERS = /^true$/i.test(process.env.QTRUST_BRIDGE_TRUST_FOR
 const adapter = new SchwabTosAdapter();
 const hb = Number(process.env.SCHWAB_HEARTBEAT_STALE_MS || 45000);
 const data = Number(process.env.SCHWAB_DATA_STALE_MS || 90000);
-const VERSION = '0.1.2';
+const VERSION = '0.2.0-cert';
+
+const SOURCE_CONTRACT = {
+  source:'SCHWAB_TOS',
+  provider:'Charles Schwab Trader API',
+  evidence_classification:'EMPIRICAL_MARKET_SOURCE_EVIDENCE_CANDIDATE',
+  required_for_governed_review:[
+    'auth=VERIFIED','subscription=ACK','socket=CONNECTED','first market-data evidence','heartbeat fresh',
+    'realtime_status=REALTIME_OBSERVED','entitlement=VERIFIED','continuity=VERIFIED',
+    'sequence_gaps=0 when provider continuity mechanism supports sequence semantics'
+  ],
+  automatic_live_promotion:false,
+  trading_authority:'NONE',
+  production_mutation:false
+};
 
 function securityHeaders() {
   const headers = {
@@ -35,12 +49,12 @@ function tos(req,res,path){
   if(path==='/health/live') return json(res,200,{status:'live',component:'marketsphere-schwab-tos-adapter',version:VERSION});
   if(path==='/health/ready') {
     const mode=adapter.state.snapshot({heartbeatStaleMs:hb,dataStaleMs:data}).mode;
-    return json(res,200,{status:'ready',feed_configured:!['DISABLED','AUTH_REQUIRED'].includes(mode)});
+    return json(res,200,{status:'ready',feed_gate:mode,source_certification_eligible:mode==='ELIGIBLE_FOR_GOVERNED_SOURCE_CERTIFICATION_REVIEW',automatic_live_promotion:false});
   }
   if(!EXPOSE_DIAGNOSTICS && path.startsWith('/api/v1/feed/')) return json(res,403,{error:'DIAGNOSTICS_DISABLED'});
   if(path==='/api/v1/feed/status') return json(res,200,adapter.state.snapshot({heartbeatStaleMs:hb,dataStaleMs:data}));
-  if(path==='/api/v1/feed/proof') return json(res,adapter.state.firstDataProof?200:425,adapter.state.proof());
-  if(path==='/api/v1/feed/contract') return json(res,200,{source:'SCHWAB_TOS',required_for_live:['auth=VERIFIED','subscription=ACK','socket=CONNECTED','heartbeat fresh','received data evidence','trusted streamer host allowlist'],state_machine:['DISABLED','AUTH_REQUIRED','AUTHENTICATING','CONNECTING','LIVE','DEGRADED','STALE','DISCONNECTED'],trading_authority:'NONE',production_mutation:false});
+  if(path==='/api/v1/feed/proof') return json(res,adapter.state.firstDataProof?200:425,adapter.state.proof({heartbeatStaleMs:hb,dataStaleMs:data}));
+  if(path==='/api/v1/feed/contract') return json(res,200,SOURCE_CONTRACT);
   return json(res,404,{error:'NOT_FOUND'});
 }
 
@@ -76,6 +90,6 @@ const gateway=http.createServer((req,res)=>{
 gateway.listen(EXTERNAL_PORT,'0.0.0.0',async()=>{
   await adapter.start();
   const state=adapter.state.snapshot({heartbeatStaleMs:hb,dataStaleMs:data});
-  console.log(JSON.stringify({event:'qtrust_tos_bridge_started',version:VERSION,external_port:EXTERNAL_PORT,qtrust_internal_port:INTERNAL_PORT,feed_mode:state.mode,trading_authority:'NONE',production_mutation:false}));
+  console.log(JSON.stringify({event:'qtrust_tos_bridge_started',version:VERSION,external_port:EXTERNAL_PORT,qtrust_internal_port:INTERNAL_PORT,feed_mode:state.mode,trading_authority:'NONE',automatic_live_promotion:false,production_mutation:false}));
 });
 const shutdown=()=>{adapter.stop();gateway.close(()=>process.exit(0));setTimeout(()=>process.exit(0),3000).unref()}; process.on('SIGTERM',shutdown); process.on('SIGINT',shutdown);
