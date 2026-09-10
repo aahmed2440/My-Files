@@ -2,9 +2,8 @@ name: CryptoSphere — Pilot Certification
 
 on:
   pull_request:
-    paths:
-      - 'deploy/cryptosphere-integrated/**'
-      - '.github/workflows/cryptosphere-pilot-cert.yml'
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -21,6 +20,7 @@ env:
 jobs:
   certify:
     name: Verify release bytes and integrated runtime
+    if: startsWith(github.head_ref, 'cryptosphere/')
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -219,6 +219,7 @@ jobs:
           {
             echo '## CryptoSphere Pilot Certification'
             echo
+            echo '- Runs on every CryptoSphere PR head targeting main so runtime certification is bound to the exact candidate revision.'
             echo '- Exact Owner/Core repository hashes printed before manifest enforcement'
             echo '- ZIP integrity checked before trusting the manifest'
             echo '- Release manifest must match exact repository bytes'
