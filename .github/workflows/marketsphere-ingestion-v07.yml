@@ -1,0 +1,65 @@
+name: MarketSphere Ingestion Contract v0.7
+
+on:
+  push:
+    branches:
+      - "hardening/marketsphere-ingestion-contract-v0.7-20260909"
+    paths:
+      - "deploy/marketsphere-replay-cert/**"
+      - ".github/workflows/marketsphere-ingestion-v07.yml"
+  pull_request:
+    paths:
+      - "deploy/marketsphere-replay-cert/**"
+      - ".github/workflows/marketsphere-ingestion-v07.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ingestion-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/marketsphere-replay-cert
+    steps:
+      - name: Check out immutable source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Set up immutable Node action
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+      - name: Emit v0.7 runtime fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum src/schema.mjs src/adapter_contract.mjs src/continuity.mjs src/evidence_passport.mjs src/ingestion_historian.mjs src/ingestion_engine.mjs src/ingestion_cert_engine.mjs src/ingestion_server.mjs
+      - name: Syntax checks
+        run: npm run check
+      - name: Full replay plus ingestion regression suite
+        run: npm test
+      - name: Verify provider-neutral risk-off gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "READ_ONLY_EVIDENCE" src/adapter_contract.mjs
+          grep -q "ADAPTER_HOST_ALLOWLIST_REQUIRED" src/adapter_contract.mjs
+          grep -q "ADAPTER_ENDPOINT_SECRET_QUERY_PROHIBITED" src/adapter_contract.mjs
+          grep -q "UNKNOWN_SEQUENCE_NOT_PROVIDED" src/continuity.mjs
+          grep -q "DEGRADED_EVIDENCE_ONLY" src/evidence_passport.mjs
+          grep -q "empirical_source_certified: false" src/ingestion_engine.mjs
+          grep -q "authoritative_source_promoted: false" src/ingestion_engine.mjs
+          grep -q "trading_authority: 'NONE'" src/ingestion_server.mjs
+          grep -q "production_mutation: false" src/ingestion_server.mjs
+          grep -q "automatic_live_promotion: false" src/ingestion_server.mjs
+          grep -q "arbitrary_plugin_execution: 'NOT_PERMITTED_BY_CONTRACT'" src/ingestion_server.mjs
+          if grep -R -E "SCHWAB_ACCESS_TOKEN|refresh_token|client_secret|order[_ -]?routing|place[_ -]?order" -ni src/adapter_contract.mjs src/continuity.mjs src/evidence_passport.mjs src/ingestion_historian.mjs src/ingestion_engine.mjs src/ingestion_cert_engine.mjs src/ingestion_server.mjs; then
+            echo '::error::Provider-neutral ingestion certification must contain no brokerage credentials or order-routing path.'
+            exit 1
+          fi
+          if grep -R -E "trading_authority: '(FULL|ORDER|TRADING)'|production_mutation: true|automatic_live_promotion: true" -n src/adapter_contract.mjs src/evidence_passport.mjs src/ingestion_engine.mjs src/ingestion_server.mjs; then
+            echo '::error::Authority escalation is prohibited.'
+            exit 1
+          fi
+          echo "MarketSphere v0.7 provider-neutral ingestion gates: PASS"
