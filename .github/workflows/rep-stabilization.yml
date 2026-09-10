@@ -1,0 +1,163 @@
+name: REP Stabilization Gate
+
+on:
+  push:
+    branches:
+      - rep/stabilization-2026-09-08
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/rep-stabilization.yml'
+      - '.gitignore'
+      - 'SECURITY.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rep-stabilization-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cryptosphere-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Verify release manifest and ZIP structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd deploy/cryptosphere-integrated
+          echo 'Observed SHA-256 values:'
+          sha256sum cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip gateway.mjs
+          sha256sum -c SHA256.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          for name in ('cryptosphere-owner-runtime.zip','cryptosphere-core-runtime.zip'):
+              p=Path(name)
+              assert p.read_bytes()[:4] == b'PK\x03\x04', f'{name}: invalid ZIP magic'
+              assert zipfile.is_zipfile(p), f'{name}: zipfile validation failed'
+              with zipfile.ZipFile(p) as z:
+                  bad=z.testzip()
+                  assert bad is None, f'{name}: corrupt member {bad}'
+                  for member in z.infolist():
+                      target=Path(member.filename)
+                      assert not target.is_absolute(), f'{name}: absolute archive path {member.filename}'
+                      assert '..' not in target.parts, f'{name}: traversal archive path {member.filename}'
+              print(f'{name}: ZIP structure PASS')
+          PY
+          node --check gateway.mjs
+
+  e3i-regression-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Run E3I invariants and dependency audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd deploy/e3i/v160-rc2
+          npm ci --ignore-scripts
+          npm test
+          npm audit --omit=dev --audit-level=high
+
+  repository-security-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Check tracked secret hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -Eq '(^|/)(\.env($|\.)|id_rsa($|\.)|id_ed25519($|\.)|.*\.(pem|p12|pfx|key)$)'; then
+            echo 'Potential secret-bearing filename is tracked:'
+            git ls-files | grep -E '(^|/)(\.env($|\.)|id_rsa($|\.)|id_ed25519($|\.)|.*\.(pem|p12|pfx|key)$)' | sed 's/^/ - /'
+            exit 1
+          fi
+          pattern='-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}'
+          matches=$(git grep -IlE -- "$pattern" -- ':!*.zip' ':!*.png' ':!*.jpg' ':!*.jpeg' ':!*.gif' || true)
+          if [ -n "$matches" ]; then
+            echo 'Potential embedded credential signature found in:'
+            printf '%s\n' "$matches" | sed 's/^/ - /'
+            exit 1
+          fi
+          echo 'Tracked secret hygiene PASS'
+      - name: Check repository security invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f SECURITY.md
+          test -f .gitignore
+          grep -Eq '(^|/)\.env' .gitignore
+          grep -Eq '\*\.pem|\.pem' .gitignore
+          grep -Eq '\*\.key|\.key' .gitignore
+          grep -Eq '\*\.p12|\.p12' .gitignore
+          echo 'Repository hygiene PASS'
+
+  cryptosphere-salvage-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Diagnose recoverability without modifying repository
+        shell: bash
+        run: |
+          set -u
+          cd deploy/cryptosphere-integrated
+          command -v zip >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq zip; }
+          for file in cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip; do
+            echo "===== $file ====="
+            if python3 - "$file" <<'PY'
+          import sys, zipfile
+          raise SystemExit(0 if zipfile.is_zipfile(sys.argv[1]) else 1)
+          PY
+            then
+              echo 'Archive is already structurally valid.'
+              unzip -t "$file" || true
+              continue
+            fi
+            out="/tmp/${file%.zip}.repaired.zip"
+            log="/tmp/${file%.zip}.repair.log"
+            rm -f "$out" "$log"
+            set +o pipefail
+            yes y | timeout 20s zip -FF "$file" --out "$out" >"$log" 2>&1
+            repair_rc=${PIPESTATUS[1]}
+            set -o pipefail
+            cat "$log"
+            echo "repair exit code: $repair_rc"
+            if [ "$repair_rc" -eq 124 ]; then
+              echo 'SALVAGE_TIMEOUT'
+              continue
+            fi
+            if [ -f "$out" ] && unzip -t "$out"; then
+              echo 'SALVAGE_STRUCTURAL_PASS'
+              root="/tmp/${file%.zip}.recovered"
+              rm -rf "$root" && mkdir -p "$root"
+              unzip -q "$out" -d "$root"
+              echo 'Recovered inventory:'
+              find "$root" -type f -printf '%P\n' | LC_ALL=C sort
+              echo "Recovered file count: $(find "$root" -type f | wc -l)"
+              if [ -f "$root/RELEASE_MANIFEST.json" ]; then
+                echo 'Recovered RELEASE_MANIFEST.json:'
+                python3 -m json.tool "$root/RELEASE_MANIFEST.json" || cat "$root/RELEASE_MANIFEST.json"
+              fi
+            else
+              echo 'SALVAGE_STRUCTURAL_FAIL'
+            fi
+          done
