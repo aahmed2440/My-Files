@@ -2,11 +2,15 @@ import { canonicalJson, sha256 } from './schema.mjs';
 
 export const EVIDENCE_PASSPORT_VERSION = 1;
 
-function safe(value, max = 128) { return String(value ?? '').trim().slice(0, max); }
+function qualityGate(continuity) {
+  const failed = String(continuity?.continuity ?? '').startsWith('FAILED_');
+  if (failed) return 'DEGRADED_EVIDENCE_ONLY';
+  if (continuity?.provider_continuity_verified === true) return 'CONTINUITY_PROVIDER_VERIFIED';
+  return 'EVIDENCE_OBSERVED_NOT_CERTIFIED';
+}
 
 export function buildEvidencePassport({ manifest, adapter_manifest_sha256, event, event_sha256, continuity, prior_passport_sha256 = null }) {
   if (!manifest || !adapter_manifest_sha256 || !event || !event_sha256 || !continuity) throw new Error('EVIDENCE_PASSPORT_INPUT_REQUIRED');
-  const observedAt = new Date().toISOString();
   const base = {
     evidence_passport_version: EVIDENCE_PASSPORT_VERSION,
     adapter_id: manifest.adapter_id,
@@ -32,15 +36,15 @@ export function buildEvidencePassport({ manifest, adapter_manifest_sha256, event
       timestamp_regressions: continuity.timestamp_regressions,
       provider_continuity_verified: false
     },
+    quality_gate: qualityGate(continuity),
     quality_flags: Array.isArray(event.quality_flags) ? [...event.quality_flags] : [],
-    observed_at: observedAt,
+    observed_at: event.receive_ts,
     prior_passport_sha256,
     empirical_source_certified: false,
     authoritative_source_promoted: false,
     trading_authority: 'NONE',
     production_mutation: false,
-    automatic_live_promotion: false,
-    notes: safe('', 256)
+    automatic_live_promotion: false
   };
   const passport_sha256 = sha256(canonicalJson(base));
   return { ...base, passport_sha256 };
