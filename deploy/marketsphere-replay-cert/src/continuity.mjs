@@ -9,8 +9,36 @@ function validMillis(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function emptyState() {
+  return {
+    observations: 0,
+    last_sequence: null,
+    last_source_ts_ms: null,
+    sequence_gaps: 0,
+    sequence_duplicates: 0,
+    sequence_regressions: 0,
+    timestamp_regressions: 0
+  };
+}
+
 export class ContinuityTracker {
   constructor() { this.streams = new Map(); }
+
+  hydrate(streamTails = {}) {
+    for (const [key, tail] of Object.entries(streamTails ?? {})) {
+      const ts = validMillis(tail?.source_ts);
+      if (!key || ts === null) throw new Error('CONTINUITY_REHYDRATION_INVALID');
+      this.streams.set(key, {
+        observations: Number.isSafeInteger(tail?.observations) && tail.observations >= 0 ? tail.observations : 0,
+        last_sequence: nullableSequence(tail?.sequence),
+        last_source_ts_ms: ts,
+        sequence_gaps: Number(tail?.sequence_gaps) || 0,
+        sequence_duplicates: Number(tail?.sequence_duplicates) || 0,
+        sequence_regressions: Number(tail?.sequence_regressions) || 0,
+        timestamp_regressions: Number(tail?.timestamp_regressions) || 0
+      });
+    }
+  }
 
   observe({ stream_key, sequence, source_ts }) {
     const key = String(stream_key ?? '').trim();
@@ -19,16 +47,7 @@ export class ContinuityTracker {
     const ts = validMillis(source_ts);
     if (ts === null) throw new Error('CONTINUITY_SOURCE_TIMESTAMP_REQUIRED');
 
-    const prior = this.streams.get(key) ?? {
-      observations: 0,
-      last_sequence: null,
-      last_source_ts_ms: null,
-      sequence_gaps: 0,
-      sequence_duplicates: 0,
-      sequence_regressions: 0,
-      timestamp_regressions: 0
-    };
-
+    const prior = this.streams.get(key) ?? emptyState();
     let observation = 'FIRST_OBSERVATION';
     let continuity = 'UNKNOWN_SEQUENCE_NOT_PROVIDED';
 
