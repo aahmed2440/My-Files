@@ -68,7 +68,7 @@ export class EmpiricalCertificationEngine {
   }
 
   async certify() {
-    await this.ingestion.initializeFromHistorian();
+    await this.ingestion.initialize();
     const [fredRaw, treasuryRaw] = await Promise.all([this.fredFetcher(), this.treasuryFetcher()]);
     const fred = withIdentity(fredRaw);
     const treasury = withIdentity(treasuryRaw);
