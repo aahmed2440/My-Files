@@ -25,8 +25,20 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout immutable action
+      - name: Checkout exact candidate SHA
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind workspace to candidate SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
+          echo "Candidate SHA binding: ${ACTUAL_SHA}"
 
       - name: Set up verified Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -219,6 +231,7 @@ jobs:
           {
             echo '## CryptoSphere Pilot Certification'
             echo
+            echo '- Checks out and verifies the exact PR head candidate SHA, not the synthetic PR merge ref.'
             echo '- Runs on every CryptoSphere PR head targeting main so runtime certification is bound to the exact candidate revision.'
             echo '- Exact Owner/Core repository hashes printed before manifest enforcement'
             echo '- ZIP integrity checked before trusting the manifest'
