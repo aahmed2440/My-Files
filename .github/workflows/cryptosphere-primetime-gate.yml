@@ -11,7 +11,62 @@ permissions:
   contents: read
 
 jobs:
-  primetime-static-gate:
+  static-governance-gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Syntax-check gateway
+        run: node --check deploy/cryptosphere-integrated/gateway.mjs
+
+      - name: Verify capability-based governance invariants
+        shell: python
+        run: |
+          from pathlib import Path
+          import sys
+
+          text = Path('deploy/cryptosphere-integrated/gateway.mjs').read_text()
+          required = {
+              'core advisory mode': "CRYPTOSPHERE_CORE_MODE: 'ADVISORY_ONLY'",
+              'no production execution': 'production_execution: false',
+              'no production mutation': 'production_mutation: false',
+              'no arbitrary scanning': 'arbitrary_scanning: false',
+              'human governance': 'human_governance_required: true',
+              'passive methods': "new Set(['GET', 'HEAD', 'OPTIONS'])",
+              'explicit non-mutating POST allowlist': "'/core/api/v1/renewal/mission-proportional'",
+              'owner read-only check allowlist': "'/api/check'",
+              'capability deny response': "status: 'CAPABILITY_NOT_ALLOWED'",
+              'request correlation': "'x-request-id'",
+              'proxy-chain sanitization': "delete headers['x-forwarded-for']",
+              'identity assertion sanitization': "'x-cryptosphere-proxy-key'",
+              'bounded analytical body': 'MAX_SAFE_POST_BODY_BYTES = 64 * 1024',
+          }
+          missing = [name for name, needle in required.items() if needle not in text]
+          if missing:
+              print('::error::Missing PRIMETIME governance invariant(s): ' + ', '.join(missing))
+              sys.exit(1)
+          print('CryptoSphere capability-based governance invariants: PASS')
+
+      - name: Verify non-root and build-integrity posture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx 'USER node' deploy/cryptosphere-integrated/Dockerfile
+          grep -F 'sha256sum -c SHA256.txt' deploy/cryptosphere-integrated/Dockerfile
+
+      - name: Static gate summary
+        run: |
+          {
+            echo '## CryptoSphere PRIMETIME static governance gate'
+            echo '- Gateway syntax: PASS'
+            echo '- Capability-based governance invariants: PASS'
+            echo '- Non-root runtime posture: PASS'
+            echo '- Build-time SHA enforcement is present: PASS'
+            echo '- Production promotion: NOT AUTHORIZED BY THIS WORKFLOW'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  artifact-identity-gate:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout immutable source
@@ -21,48 +76,12 @@ jobs:
         working-directory: deploy/cryptosphere-integrated
         run: sha256sum -c SHA256.txt
 
-      - name: Syntax-check gateway
-        run: node --check deploy/cryptosphere-integrated/gateway.mjs
-
-      - name: Verify governance invariants
-        shell: python
-        run: |
-          from pathlib import Path
-          import sys
-
-          p = Path('deploy/cryptosphere-integrated/gateway.mjs')
-          text = p.read_text()
-          required = {
-              'core advisory mode': "CRYPTOSPHERE_CORE_MODE: 'ADVISORY_ONLY'",
-              'no production execution': 'production_execution: false',
-              'no production mutation': 'production_mutation: false',
-              'no arbitrary scanning': 'arbitrary_scanning: false',
-              'human governance': 'human_governance_required: true',
-              'read-only method set': "new Set(['GET', 'HEAD', 'OPTIONS'])",
-              'mutation block': "status: 'METHOD_NOT_ALLOWED'",
-              'request correlation': "'x-request-id'",
-              'proxy-chain sanitization': "delete headers['x-forwarded-for']",
-          }
-          missing = [name for name, needle in required.items() if needle not in text]
-          if missing:
-              print('::error::Missing PRIMETIME governance invariant(s): ' + ', '.join(missing))
-              sys.exit(1)
-          print('CryptoSphere PRIMETIME governance invariants: PASS')
-
-      - name: Verify non-root container posture
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -Fx 'USER node' deploy/cryptosphere-integrated/Dockerfile
-          grep -F 'sha256sum -c SHA256.txt' deploy/cryptosphere-integrated/Dockerfile
-
-      - name: Gate summary
+      - name: Identity gate summary
+        if: always()
         run: |
           {
-            echo '## CryptoSphere PRIMETIME static gate'
-            echo '- Approved runtime SHA-256 identities: PASS'
-            echo '- Gateway syntax: PASS'
-            echo '- Governance invariants: PASS'
-            echo '- Non-root runtime posture: PASS'
+            echo '## CryptoSphere artifact identity gate'
+            echo '- Existing approved manifest remains authoritative until a new source-built release is reviewed.'
+            echo '- A mismatch is a deliberate HOLD, not a reason to rewrite the manifest.'
             echo '- Production promotion: NOT AUTHORIZED BY THIS WORKFLOW'
           } >> "$GITHUB_STEP_SUMMARY"
