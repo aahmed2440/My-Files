@@ -1,0 +1,132 @@
+name: CryptoSphere Archive Recovery Certification
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cryptosphere-integrated/**'
+      - '.github/workflows/cryptosphere-archive-recovery-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover-and-certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Inspect and reconstruct archives in runner scratch space
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zip unzip
+          mkdir -p /tmp/cs-recovered
+          for n in owner core; do
+            src="deploy/cryptosphere-integrated/cryptosphere-${n}-runtime.zip"
+            out="/tmp/cs-recovered/cryptosphere-${n}-runtime.zip"
+            echo "=== ${n}: source ==="
+            file "$src" || true
+            xxd -l 16 "$src" || true
+            tail -c 32 "$src" | xxd || true
+            echo "=== ${n}: zip -FF reconstruction ==="
+            set +e
+            zip -FF "$src" --out "$out" </dev/null
+            rc=$?
+            set -e
+            echo "zip -FF rc=$rc"
+            test -s "$out"
+            unzip -t "$out"
+            echo "recovered_sha256=$(sha256sum "$out" | awk '{print $1}')"
+            echo "recovered_size=$(stat -c '%s' "$out")"
+            echo "entry_count=$(unzip -Z1 "$out" | wc -l)"
+            unzip -Z1 "$out" | sed -n '1,80p'
+          done
+
+      - name: Reject unsafe reconstructed paths
+        shell: python
+        run: |
+          import pathlib, stat, zipfile
+          root=pathlib.Path('/tmp/cs-recovered')
+          for archive in sorted(root.glob('*.zip')):
+              with zipfile.ZipFile(archive) as z:
+                  for info in z.infolist():
+                      p=pathlib.PurePosixPath(info.filename)
+                      mode=(info.external_attr >> 16) & 0o170000
+                      if p.is_absolute() or '..' in p.parts or mode == stat.S_IFLNK:
+                          raise SystemExit(f'unsafe reconstructed entry: {archive}: {info.filename}')
+                  bad=z.testzip()
+                  if bad:
+                      raise SystemExit(f'CRC failure after reconstruction: {archive}: {bad}')
+                  print(f'{archive}: safe entries={len(z.infolist())}')
+
+      - name: Create temporary recovered build context
+        run: |
+          set -euo pipefail
+          cp -a deploy/cryptosphere-integrated /tmp/cs-build
+          cp /tmp/cs-recovered/cryptosphere-owner-runtime.zip /tmp/cs-build/cryptosphere-owner-runtime.zip
+          cp /tmp/cs-recovered/cryptosphere-core-runtime.zip /tmp/cs-build/cryptosphere-core-runtime.zip
+          printf '%s  %s\n' "$(sha256sum /tmp/cs-build/cryptosphere-owner-runtime.zip | awk '{print $1}')" cryptosphere-owner-runtime.zip > /tmp/cs-build/RECOVERED_SHA256.txt
+          printf '%s  %s\n' "$(sha256sum /tmp/cs-build/cryptosphere-core-runtime.zip | awk '{print $1}')" cryptosphere-core-runtime.zip >> /tmp/cs-build/RECOVERED_SHA256.txt
+          cat /tmp/cs-build/RECOVERED_SHA256.txt
+
+      - name: Build recovered runtime image for certification only
+        run: docker build --pull --tag cryptosphere-recovered:cert /tmp/cs-build
+
+      - name: Boot recovered runtime in isolated local container
+        run: docker run -d --name cryptosphere-recovered-cert -p 127.0.0.1:18081:8080 cryptosphere-recovered:cert
+
+      - name: Verify recovered integrated runtime readiness
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 45); do
+            code="$(curl -sS -o /tmp/recovered-health.json -w '%{http_code}' http://127.0.0.1:18081/health || true)"
+            if [ "$code" = '200' ]; then ready=1; break; fi
+            sleep 2
+          done
+          cat /tmp/recovered-health.json 2>/dev/null || true
+          if [ "$ready" != '1' ]; then
+            echo '::error::Recovered runtime did not reach aggregate readiness.'
+            docker logs cryptosphere-recovered-cert || true
+            exit 1
+          fi
+
+      - name: Verify recovered runtime remains bounded
+        shell: python
+        run: |
+          import json, urllib.request
+          with urllib.request.urlopen('http://127.0.0.1:18081/health', timeout=5) as r:
+              d=json.load(r)
+          assert d.get('product') == 'CryptoSphere'
+          assert d.get('status') == 'ready'
+          assert d.get('production_execution') is False
+          assert d.get('production_mutation') is False
+          assert d.get('arbitrary_scanning') is False
+          assert d.get('human_governance_required') is True
+          assert d.get('analytical_core',{}).get('mode') == 'ADVISORY_ONLY'
+          print('Recovered runtime governance boundary: PASS')
+
+      - name: Verify mutation remains blocked
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/blocked.json -w '%{http_code}' -X POST http://127.0.0.1:18081/core/api/v1/health)"
+          test "$code" = '405'
+          grep -q METHOD_NOT_ALLOWED /tmp/blocked.json
+
+      - name: Report forensic outcome
+        if: always()
+        run: |
+          {
+            echo '## CryptoSphere archive recovery certification'
+            echo '- This run does NOT bless reconstructed bytes as release artifacts.'
+            echo '- This run does NOT modify or deploy production.'
+            echo '- Purpose: determine whether original local ZIP records can be safely reconstructed and whether the recovered runtime can boot under advisory/read-only governance.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          docker logs cryptosphere-recovered-cert > /tmp/cryptosphere-recovered-cert.log 2>&1 || true
+
+      - name: Stop isolated container
+        if: always()
+        run: docker rm -f cryptosphere-recovered-cert >/dev/null 2>&1 || true
