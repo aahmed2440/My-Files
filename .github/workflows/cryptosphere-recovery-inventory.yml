@@ -1,0 +1,99 @@
+name: CryptoSphere Recovery Inventory
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cryptosphere-integrated/**'
+      - '.github/workflows/cryptosphere-recovery-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Inventory complete verifiable local ZIP entries
+        shell: python
+        run: |
+          import binascii, hashlib, pathlib, struct, zlib
+
+          root = pathlib.Path('deploy/cryptosphere-integrated')
+          sig_local = 0x04034B50
+          summary = []
+
+          for label in ('owner', 'core'):
+              src = root / f'cryptosphere-{label}-runtime.zip'
+              raw = src.read_bytes()
+              print(f'=== {label.upper()} ===')
+              print(f'source_sha256={hashlib.sha256(raw).hexdigest()} size={len(raw)}')
+              offset = 0
+              recovered = {}
+              stop_reason = 'eof'
+
+              while offset + 30 <= len(raw):
+                  sig = struct.unpack_from('<I', raw, offset)[0]
+                  if sig != sig_local:
+                      stop_reason = f'non_local_signature@{offset}:0x{sig:08x}'
+                      break
+                  (_, ver, flags, method, mtime, mdate, crc_expected,
+                   comp_size, uncomp_size, name_len, extra_len) = struct.unpack_from('<IHHHHHIIIHH', raw, offset)
+                  header_end = offset + 30 + name_len + extra_len
+                  if header_end > len(raw):
+                      stop_reason = f'truncated_header@{offset}'
+                      break
+                  name = raw[offset+30:offset+30+name_len].decode('utf-8')
+                  p = pathlib.PurePosixPath(name)
+                  if p.is_absolute() or '..' in p.parts or '\\' in name:
+                      raise SystemExit(f'unsafe path: {name!r}')
+                  if flags & 0x0001:
+                      raise SystemExit(f'encrypted entry prohibited: {name}')
+                  if flags & 0x0008:
+                      stop_reason = f'data_descriptor_ambiguous:{name}'
+                      break
+                  data_start = header_end
+                  data_end = data_start + comp_size
+                  if data_end > len(raw):
+                      stop_reason = f'truncated_data:{name}'
+                      break
+                  comp = raw[data_start:data_end]
+                  try:
+                      if method == 0:
+                          plain = comp
+                      elif method == 8:
+                          plain = zlib.decompress(comp, -15)
+                      else:
+                          stop_reason = f'unsupported_method_{method}:{name}'
+                          break
+                  except zlib.error as e:
+                      stop_reason = f'deflate_error:{name}:{e}'
+                      break
+                  if len(plain) != uncomp_size:
+                      stop_reason = f'size_mismatch:{name}'
+                      break
+                  crc_actual = binascii.crc32(plain) & 0xffffffff
+                  if crc_actual != crc_expected:
+                      stop_reason = f'crc_mismatch:{name}'
+                      break
+                  recovered[name] = plain
+                  print(f'PASS {hashlib.sha256(plain).hexdigest()} {len(plain):8d} {name}')
+                  offset = data_end
+
+              print(f'recovered_count={len(recovered)} stop_reason={stop_reason}')
+              manifest = recovered.get('RELEASE_MANIFEST.json')
+              if manifest is not None:
+                  print(f'--- {label} RELEASE_MANIFEST.json ---')
+                  print(manifest.decode('utf-8', errors='replace'))
+                  print(f'--- end {label} RELEASE_MANIFEST.json ---')
+              summary.append((label, len(recovered), stop_reason))
+
+          print('=== SUMMARY ===')
+          for label, count, reason in summary:
+              print(f'{label}: complete_entries={count}; {reason}')
+          if any(count == 0 for _, count, _ in summary):
+              raise SystemExit('one or more archives yielded zero verifiable entries')

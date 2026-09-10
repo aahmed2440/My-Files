@@ -1,0 +1,136 @@
+name: CryptoSphere PRIMETIME Certification
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cryptosphere-integrated/**'
+      - '.github/workflows/cryptosphere-primetime-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integrated-runtime-cert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify approved runtime artifact identities
+        working-directory: deploy/cryptosphere-integrated
+        run: |
+          set -euo pipefail
+          sha256sum -c SHA256.txt
+
+      - name: Validate ZIP structure and extraction safety
+        shell: python
+        run: |
+          import pathlib, stat, sys, zipfile
+
+          root = pathlib.Path('deploy/cryptosphere-integrated')
+          archives = [root/'cryptosphere-owner-runtime.zip', root/'cryptosphere-core-runtime.zip']
+          failures = []
+          for archive in archives:
+              with zipfile.ZipFile(archive) as z:
+                  bad = z.testzip()
+                  if bad:
+                      failures.append(f'{archive}: CRC failure at {bad}')
+                  for info in z.infolist():
+                      p = pathlib.PurePosixPath(info.filename)
+                      if p.is_absolute() or '..' in p.parts:
+                          failures.append(f'{archive}: unsafe path {info.filename}')
+                      mode = (info.external_attr >> 16) & 0o170000
+                      if mode == stat.S_IFLNK:
+                          failures.append(f'{archive}: symlink entry {info.filename}')
+          if failures:
+              print('::error::Unsafe or corrupt runtime archive detected')
+              print('\n'.join(failures))
+              sys.exit(1)
+          print('Archive integrity/extraction safety: PASS')
+
+      - name: Validate gateway syntax
+        run: node --check deploy/cryptosphere-integrated/gateway.mjs
+
+      - name: Build integrated runtime image
+        run: docker build --pull --tag cryptosphere-primetime:cert deploy/cryptosphere-integrated
+
+      - name: Start isolated certification container
+        run: |
+          set -euo pipefail
+          docker run -d --name cryptosphere-cert -p 127.0.0.1:18080:8080 cryptosphere-primetime:cert
+
+      - name: Wait for aggregate readiness
+        run: |
+          set -euo pipefail
+          ready=0
+          for i in $(seq 1 40); do
+            code="$(curl -sS -o /tmp/health.json -w '%{http_code}' http://127.0.0.1:18080/health || true)"
+            if [ "$code" = '200' ]; then ready=1; break; fi
+            sleep 2
+          done
+          cat /tmp/health.json 2>/dev/null || true
+          if [ "$ready" != '1' ]; then
+            echo '::error::Integrated Owner + Core runtime did not reach aggregate readiness.'
+            docker logs cryptosphere-cert || true
+            exit 1
+          fi
+
+      - name: Enforce governance invariants
+        shell: python
+        run: |
+          import json, urllib.request
+          with urllib.request.urlopen('http://127.0.0.1:18080/health', timeout=5) as r:
+              data=json.load(r)
+          checks = {
+              'status ready': data.get('status') == 'ready',
+              'product CryptoSphere': data.get('product') == 'CryptoSphere',
+              'owner ready': data.get('owner_console',{}).get('ready') is True,
+              'core ready': data.get('analytical_core',{}).get('ready') is True,
+              'core advisory-only': data.get('analytical_core',{}).get('mode') == 'ADVISORY_ONLY',
+              'production execution disabled': data.get('production_execution') is False,
+              'production mutation disabled': data.get('production_mutation') is False,
+              'arbitrary scanning disabled': data.get('arbitrary_scanning') is False,
+              'human governance required': data.get('human_governance_required') is True,
+              'full runtime not self-certified': data.get('full_runtime_certified') is False,
+          }
+          failed=[name for name,ok in checks.items() if not ok]
+          for name,ok in checks.items(): print(f'{name}: {"PASS" if ok else "FAIL"}')
+          if failed: raise SystemExit('Governance invariant failure: '+', '.join(failed))
+
+      - name: Verify mutation boundary and anti-indexing
+        run: |
+          set -euo pipefail
+          POST_CODE="$(curl -sS -o /tmp/post.json -w '%{http_code}' -X POST http://127.0.0.1:18080/core/api/v1/health)"
+          test "$POST_CODE" = '405'
+          grep -q 'METHOD_NOT_ALLOWED' /tmp/post.json
+          curl -fsS http://127.0.0.1:18080/robots.txt | grep -q 'Disallow: /'
+          curl -fsSI http://127.0.0.1:18080/health | tr -d '\r' | grep -qi '^x-robots-tag: noindex, nofollow, noarchive$'
+
+      - name: Verify browser surfaces are reachable
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1:18080/ >/dev/null
+          curl -fsS http://127.0.0.1:18080/core/ >/dev/null
+
+      - name: Capture certification evidence
+        if: always()
+        run: |
+          {
+            echo '## CryptoSphere PRIMETIME integrated-runtime certification'
+            echo "- Commit: $GITHUB_SHA"
+            echo '- Runtime artifacts: SHA-256 checked'
+            echo '- ZIP integrity/extraction safety: checked'
+            echo '- Integrated image build: exercised'
+            echo '- Owner + Core aggregate readiness: exercised'
+            echo '- Advisory/read-only governance boundary: exercised'
+            echo '- Mutation rejection: exercised'
+            echo '- Browser surfaces: exercised'
+            echo '- Production deployment: NOT performed'
+          } >> "$GITHUB_STEP_SUMMARY"
+          docker logs cryptosphere-cert > cryptosphere-cert.log 2>&1 || true
+
+      - name: Stop certification container
+        if: always()
+        run: docker rm -f cryptosphere-cert >/dev/null 2>&1 || true
