@@ -1,33 +1,34 @@
 import { sha256 } from './schema.mjs';
-import { validateAdapterManifest } from './adapter_contract.mjs';
+import { normalizeAdapterManifest } from './adapter_contract.mjs';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const TIMEOUT_MS = 10000;
+const CERT_YEAR = 2026;
 
-export const FRED_DGS10_MANIFEST = validateAdapterManifest({
-  adapter_contract_version: 1,
+export const FRED_DGS10_MANIFEST = normalizeAdapterManifest({
   adapter_id: 'public-fred-dgs10',
   adapter_version: '0.8.0',
   provider_name: 'Federal Reserve Bank of St. Louis FRED',
   source_classification: 'PUBLIC_OFFICIAL',
   transport: 'HTTPS_PULL',
-  endpoints: ['https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10'],
-  host_allowlist: ['fred.stlouisfed.org'],
-  output_schema_version: 1,
-  authority: 'READ_ONLY_EVIDENCE'
+  endpoint: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10',
+  allowed_hosts: ['fred.stlouisfed.org'],
+  capabilities: ['DAILY_YIELD_OBSERVATION','TENOR_10Y'],
+  trading_authority: 'NONE',
+  production_mutation: false
 });
 
-export const TREASURY_10Y_MANIFEST = validateAdapterManifest({
-  adapter_contract_version: 1,
+export const TREASURY_10Y_MANIFEST = normalizeAdapterManifest({
   adapter_id: 'public-us-treasury-10y',
   adapter_version: '0.8.0',
   provider_name: 'U.S. Department of the Treasury',
   source_classification: 'AGENCY_OFFICIAL',
   transport: 'HTTPS_PULL',
-  endpoints: ['https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=YYYY'],
-  host_allowlist: ['home.treasury.gov'],
-  output_schema_version: 1,
-  authority: 'READ_ONLY_EVIDENCE'
+  endpoint: `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=${CERT_YEAR}`,
+  allowed_hosts: ['home.treasury.gov'],
+  capabilities: ['DAILY_PAR_YIELD_OBSERVATION','TENOR_10Y'],
+  trading_authority: 'NONE',
+  production_mutation: false
 });
 
 function decodeXml(value) {
@@ -45,13 +46,16 @@ async function fetchBoundedText(url, allowedHost, { maxBytes = MAX_BODY_BYTES, t
   if (parsed.hostname !== allowedHost) throw new Error('EMPIRICAL_SOURCE_HOST_REJECTED');
   if (parsed.username || parsed.password) throw new Error('EMPIRICAL_SOURCE_URL_CREDENTIALS_PROHIBITED');
   for (const key of parsed.searchParams.keys()) {
-    if (/token|secret|password|auth|key/i.test(key)) throw new Error('EMPIRICAL_SOURCE_SECRET_QUERY_PROHIBITED');
+    if (/token|secret|password|auth|api[_-]?key|refresh|cookie|session/i.test(key)) throw new Error('EMPIRICAL_SOURCE_SECRET_QUERY_PROHIBITED');
   }
   const response = await fetch(parsed, {
     method: 'GET',
     redirect: 'manual',
     signal: AbortSignal.timeout(Math.max(1000, Math.min(20000, Number(timeoutMs) || TIMEOUT_MS))),
-    headers: { 'accept': 'text/csv,text/xml,application/xml,text/plain;q=0.9,*/*;q=0.1', 'user-agent': 'MarketSphere-Empirical-Cert/0.8' }
+    headers: {
+      accept: 'text/csv,text/xml,application/xml,text/plain;q=0.9,*/*;q=0.1',
+      'user-agent': 'MarketSphere-Empirical-Cert/0.8'
+    }
   });
   if (response.status >= 300 && response.status < 400) throw new Error('EMPIRICAL_SOURCE_REDIRECT_REJECTED');
   if (!response.ok) throw new Error(`EMPIRICAL_SOURCE_HTTP_${response.status}`);
@@ -105,8 +109,7 @@ export function parseTreasury10yXml(xmlText) {
       ?? entry.match(/<updated[^>]*>([^<]+)<\/updated>/i);
     const yieldMatch = entry.match(/<d:BC_10YEAR[^>]*>([^<]+)<\/d:BC_10YEAR>/i);
     if (!dateMatch || !yieldMatch) continue;
-    const rawDate = decodeXml(dateMatch[1]).trim();
-    const parsedDate = new Date(rawDate);
+    const parsedDate = new Date(decodeXml(dateMatch[1]).trim());
     const value = Number(decodeXml(yieldMatch[1]).trim());
     if (!Number.isFinite(parsedDate.getTime()) || !Number.isFinite(value)) continue;
     observations.push({ date: parsedDate.toISOString().slice(0, 10), value });
@@ -142,17 +145,23 @@ function asEvent({ manifest, observation, fetchMeta, source, venue }) {
 }
 
 export async function fetchFredDgs10() {
-  const endpoint = FRED_DGS10_MANIFEST.endpoints[0];
-  const fetchMeta = await fetchBoundedText(endpoint, 'fred.stlouisfed.org');
+  const fetchMeta = await fetchBoundedText(FRED_DGS10_MANIFEST.endpoint, 'fred.stlouisfed.org');
   const observation = parseFredDgs10Csv(fetchMeta.text);
-  return { manifest: FRED_DGS10_MANIFEST, observation, fetch_meta: fetchMeta, event: asEvent({ manifest:FRED_DGS10_MANIFEST, observation, fetchMeta, source:'FRED_DGS10', venue:'FEDERAL_RESERVE_PUBLICATION' }) };
+  return {
+    manifest: FRED_DGS10_MANIFEST,
+    observation,
+    fetch_meta: fetchMeta,
+    event: asEvent({ manifest:FRED_DGS10_MANIFEST, observation, fetchMeta, source:'FRED_DGS10', venue:'FEDERAL_RESERVE_PUBLICATION' })
+  };
 }
 
-export async function fetchTreasury10y({ year = new Date().getUTCFullYear() } = {}) {
-  const safeYear = Number(year);
-  if (!Number.isInteger(safeYear) || safeYear < 1990 || safeYear > 2100) throw new Error('TREASURY_YEAR_INVALID');
-  const endpoint = `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value=${safeYear}`;
-  const fetchMeta = await fetchBoundedText(endpoint, 'home.treasury.gov');
+export async function fetchTreasury10y() {
+  const fetchMeta = await fetchBoundedText(TREASURY_10Y_MANIFEST.endpoint, 'home.treasury.gov');
   const observation = parseTreasury10yXml(fetchMeta.text);
-  return { manifest: TREASURY_10Y_MANIFEST, observation, fetch_meta: fetchMeta, event: asEvent({ manifest:TREASURY_10Y_MANIFEST, observation, fetchMeta, source:'US_TREASURY_DAILY_PAR_YIELD', venue:'US_TREASURY_PUBLICATION' }) };
+  return {
+    manifest: TREASURY_10Y_MANIFEST,
+    observation,
+    fetch_meta: fetchMeta,
+    event: asEvent({ manifest:TREASURY_10Y_MANIFEST, observation, fetchMeta, source:'US_TREASURY_DAILY_PAR_YIELD', venue:'US_TREASURY_PUBLICATION' })
+  };
 }
