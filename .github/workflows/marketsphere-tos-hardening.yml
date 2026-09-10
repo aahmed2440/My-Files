@@ -1,0 +1,61 @@
+name: MarketSphere TOS Adapter Hardening
+
+on:
+  push:
+    branches:
+      - "hardening/marketsphere-tos-credential-boundary-2026-09-07"
+    paths:
+      - "deploy/marketsphere-tos-adapter/**"
+      - ".github/workflows/marketsphere-tos-hardening.yml"
+  pull_request:
+    paths:
+      - "deploy/marketsphere-tos-adapter/**"
+      - ".github/workflows/marketsphere-tos-hardening.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/marketsphere-tos-adapter
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Syntax checks
+        run: npm run check
+
+      - name: Protocol and state regression tests
+        run: npm test
+
+      - name: Verify no runtime NPM dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const pkg = require('./package.json');
+          const runtime = Object.keys(pkg.dependencies || {});
+          if (runtime.length) throw new Error(`Unexpected runtime dependencies: ${runtime.join(', ')}`);
+          console.log('No runtime NPM dependencies: PASS');
+          NODE
+
+      - name: Verify fail-closed credential-boundary markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "SCHWAB_STREAM_HOST_ALLOWLIST" src/adapter.mjs
+          grep -q "STREAMER_URL_PROTOCOL_REJECTED" src/adapter.mjs
+          grep -q "PREFERENCE_RESPONSE_TOO_LARGE" src/adapter.mjs
+          grep -q "TOS_EXPOSE_DIAGNOSTICS.*false" qtrust_bridge.mjs
+          grep -q "QTRUST_BRIDGE_TRUST_FORWARD_HEADERS.*false" qtrust_bridge.mjs
+          echo "Credential-boundary markers: PASS"
