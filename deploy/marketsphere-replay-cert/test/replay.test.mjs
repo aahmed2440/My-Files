@@ -19,15 +19,15 @@ const event = (fields) => ({
   fields, quality_flags:['SYNTHETIC','NON_LIVE']
 });
 
+test('unsupported source classification is rejected', () => {
+  assert.throws(() => normalizeMarketEvent({ ...event({bid:1}), source_classification:'LIVE' }), /MARKET_EVENT_SOURCE_CLASSIFICATION_REJECTED/);
+});
+
 test('canonical event fingerprint is stable across field key order', () => {
   const a = fingerprintMarketEvent(event({ bid:1, ask:2 }));
   const b = fingerprintMarketEvent(event({ ask:2, bid:1 }));
   assert.equal(a.event_sha256, b.event_sha256);
   assert.equal(canonicalJson(a.event), canonicalJson(b.event));
-});
-
-test('non-synthetic source classification is rejected', () => {
-  assert.throws(() => normalizeMarketEvent({ ...event({bid:1}), source_classification:'LIVE' }), /REPLAY_SOURCE_CLASSIFICATION_REQUIRED/);
 });
 
 test('first certification writes six deterministic events and verifies chain', async () => {
