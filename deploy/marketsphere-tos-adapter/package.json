@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/server.mjs && node --check src/adapter.mjs && node --check src/state.mjs && node --check qtrust_bridge.mjs"
+    "check": "node --check src/server.mjs && node --check src/adapter.mjs && node --check src/state.mjs && node --check src/precredential_cert.mjs && node --check qtrust_bridge.mjs",
+    "cert:precredential": "node src/precredential_cert.mjs"
   },
   "engines": { "node": ">=22" }
 }
