@@ -5,6 +5,7 @@ on:
     branches:
       - "hardening/marketsphere-tos-credential-boundary-2026-09-07"
       - "hardening/marketsphere-schwab-cert-v0.2-20260908"
+      - "hardening/marketsphere-direct-cert-v0.4-20260910"
     paths:
       - "deploy/marketsphere-tos-adapter/**"
       - ".github/workflows/marketsphere-tos-hardening.yml"
@@ -38,6 +39,9 @@ jobs:
 
       - name: Protocol and state regression tests
         run: npm test
+
+      - name: Pre-credential fail-closed certification
+        run: npm run cert:precredential
 
       - name: Verify no runtime NPM dependencies
         shell: bash
