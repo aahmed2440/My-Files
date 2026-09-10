@@ -8,7 +8,7 @@ const CORE_PORT = 8001;
 const CORE_PYTHON = process.env.CORE_PYTHON || 'python3';
 const OWNER_DIR = process.env.CRYPTOSPHERE_OWNER_DIR || '/app/owner';
 const CORE_DIR = process.env.CRYPTOSPHERE_CORE_DIR || '/app/core';
-const VERSION = 'primetime-hardening-2026.09.10-r2';
+const VERSION = 'primetime-hardening-2026.09.10-r3';
 const PASSIVE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const SAFE_POST_PATHS = new Set([
   '/api/check',
@@ -47,15 +47,23 @@ function audit(event, details = {}) {
   }));
 }
 
+function terminateSiblingProcesses(exitedChild) {
+  for (const sibling of children) {
+    if (sibling !== exitedChild && !sibling.killed) sibling.kill('SIGTERM');
+  }
+}
+
 function launch(command, args, options = {}) {
   const child = spawn(command, args, { stdio: 'inherit', ...options });
   children.push(child);
   child.on('exit', (code, signal) => {
     audit('child_exit', { command, code, signal });
     if (!shuttingDown) {
-      // A partial runtime must never remain advertised as healthy. Exit the
-      // gateway so Railway can restart the whole unit atomically.
-      process.exit(code && code !== 0 ? code : 1);
+      // Fail the complete runtime unit atomically. A surviving sibling must
+      // never remain orphaned after another child exits unexpectedly.
+      shuttingDown = true;
+      terminateSiblingProcesses(child);
+      setTimeout(() => process.exit(code && code !== 0 ? code : 1), 100).unref();
     }
   });
   return child;
@@ -133,15 +141,12 @@ function sanitizedProxyHeaders(req, targetPort, requestId, bodyLength = null) {
   const headers = { ...req.headers };
   for (const name of HOP_BY_HOP) delete headers[name];
 
-  // Never allow an internet caller to assert proxy-chain identity metadata.
   delete headers['x-forwarded-for'];
   delete headers['x-forwarded-host'];
   delete headers['x-forwarded-port'];
   delete headers['x-forwarded-proto'];
   delete headers['forwarded'];
 
-  // Until a separately authenticated SSO/identity-proxy boundary is integrated,
-  // external CryptoSphere identity assertions fail closed at this gateway.
   for (const name of EXTERNAL_IDENTITY_ASSERTION_HEADERS) delete headers[name];
 
   delete headers['content-length'];
@@ -333,7 +338,7 @@ function shutdown(signal) {
   shuttingDown = true;
   audit('gateway_shutdown', { signal });
   server.close(() => process.exit(0));
-  for (const c of children) if (!c.killed) c.kill('SIGTERM');
+  terminateSiblingProcesses(null);
   setTimeout(() => process.exit(0), 3000).unref();
 }
 
