@@ -3,7 +3,7 @@
   "program": "CryptoSphere",
   "stage": "PILOT",
   "disposition": "HOLD",
-  "as_of_utc": "2026-09-10T22:34:09Z",
+  "as_of_utc": "2026-09-10T22:47:00Z",
   "branch": "cryptosphere/pilot-hardening-2026-09-09",
   "authority": {
     "mode": "ADVISORY_ONLY",
@@ -14,6 +14,7 @@
   },
   "gates": {
     "public_repository_release_guard": "PASS",
+    "pilot_control_plane": "PASS",
     "exact_release_bytes_and_zip_integrity": "FAIL",
     "release_manifest": "BLOCKED",
     "package_structure": "BLOCKED",
@@ -45,6 +46,6 @@
     "external_canary_allowed": false,
     "promotion_allowed": false
   },
-  "next_transition": "Replace both repository runtime ZIPs with the exact approved bytes, then require the full Pilot Certification workflow to pass before any isolated Railway source deployment.",
+  "next_transition": "Replace both repository runtime ZIPs with the exact approved bytes, then require Artifact Intake and full Pilot Certification to pass before any isolated Railway source deployment.",
   "attribution": "Designed, Engineered, and Built by: Azad Ahmed — In Mission To Solve Intelligence At Civilizational Scale."
 }
