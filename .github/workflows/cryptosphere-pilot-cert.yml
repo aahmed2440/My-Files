@@ -31,14 +31,22 @@ jobs:
         with:
           node-version: '22.23.2'
 
-      - name: Verify exact release bytes
+      - name: Inspect exact release bytes and ZIP integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${CS_DIR}"
+          echo 'Actual repository SHA-256 values:'
+          sha256sum cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip
+          unzip -t cryptosphere-owner-runtime.zip
+          unzip -t cryptosphere-core-runtime.zip
+
+      - name: Verify release manifest matches exact bytes
         shell: bash
         run: |
           set -euo pipefail
           cd "${CS_DIR}"
           sha256sum -c SHA256.txt
-          unzip -t cryptosphere-owner-runtime.zip
-          unzip -t cryptosphere-core-runtime.zip
 
       - name: Verify expected package structure
         shell: bash
@@ -138,8 +146,10 @@ jobs:
           {
             echo '## CryptoSphere Pilot Certification'
             echo
-            echo '- Exact Owner/Core release-byte hashes checked against SHA256.txt'
-            echo '- ZIP integrity and expected package structure checked'
+            echo '- Exact Owner/Core repository hashes printed before manifest enforcement'
+            echo '- ZIP integrity checked before trusting the manifest'
+            echo '- Release manifest must match exact repository bytes'
+            echo '- Expected package structure checked'
             echo '- Gateway, recovery shell, Owner syntax and Core Python compile gates checked'
             echo '- Integrated image built from deploy/cryptosphere-integrated/Dockerfile'
             echo '- Owner Console + Analytical Core aggregate readiness exercised'
