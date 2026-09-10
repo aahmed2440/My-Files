@@ -1,57 +1,52 @@
-# CryptoSphere Pilot Readiness — 2026-09-09
+# CryptoSphere Pilot Readiness — evidence refresh 2026-09-10
 
-## Verified locally
-- Preserved integrated Owner artifact SHA-256 matches repository manifest exactly.
-- Preserved integrated Core artifact SHA-256 matches repository manifest exactly.
-- Both preserved ZIP archives pass integrity tests and unpack cleanly.
-- Owner Console 1.4.1 starts and reports `SERVICE_READY`.
-- Default/no-allowlist Owner posture is `DEMO_ONLY` and performs no external contact.
-- External identity mode rejects unauthenticated, spoofed-without-proxy-key, and unprivileged requests.
-- External identity mode returns configured asset metadata without target URL disclosure for a valid trusted OWNER envelope.
-- Unknown asset IDs fail closed with HTTP 403 before any target contact.
-- Analytical Core 0.90.1 starts ready in `ADVISORY_ONLY` mode.
-- Core status reports a 52/52 regression baseline and no execution/auto-policy/auto-collection/auto-scheduling authority.
-- Core UI bootstrap and mission-proportional analysis endpoint execute successfully.
-- Integrated gateway serves Owner at `/`, Core at `/core/`, aggregate `/health`, and Core API paths through `/core/api/v1/`.
-- Browser API path transform works under `/core/`.
-- Gateway security headers are present.
+## Current disposition
+**HOLD for hosted Pilot.** The remaining P0 blocker is exact repository artifact intake. No Railway source deployment, public domain, external canary, promotion, production execution, autonomous policy change, or autonomous deployment is authorized.
 
-## Pilot-hardened gateway candidate — local certification
-A separate, non-production candidate was built and syntax-checked locally. Candidate SHA-256: `5bacbada0c2163a89e3f3feaa8ac01714b3ee5dd04c8fc302a4c37d601ca573e`.
+## Verified engineering baseline
+- Preserved Owner runtime: 27,977 bytes; SHA-256 `6d58d4023eedbf319a162f15541628c512acb9751a06d47dcc049d5d988dd146`; ZIP integrity PASS.
+- Preserved Core runtime: 95,596 bytes; SHA-256 `bc2c527f358174715b569c32f10d9a28f85d8d8724fcbae407963c9922a1b997`; ZIP integrity PASS.
+- Owner Console 1.4.1 local readiness PASS; empty allowlist remains `DEMO_ONLY` and performs no external contact.
+- Analytical Core 0.90.1 local readiness PASS in `ADVISORY_ONLY`; production execution remains false and human governance remains required.
+- Hardened integrated gateway is committed on the Pilot branch. Trusted-external-identity rejection/acceptance behavior and bounded body/concurrency/rate/timeout controls passed controlled local acceptance.
+- Hosted acceptance harness is committed and is explicitly non-executing/non-autonomous.
+- Dedicated isolated Railway Pilot boundary is provisioned and fail-closed; source deployment has not started.
 
-With external identity mode enabled and an empty configured asset list, the following acceptance checks passed without contacting a real external target:
-- `/health` => 200 and reports `TRUSTED_EXTERNAL_REQUIRED`, Core limits, `production_execution=false`, and human governance.
-- Core unauthenticated request => 401.
-- Spoofed OWNER headers without the deployment proxy key => 401.
-- VIEWER with the correct test proxy key => 401.
-- Verified OWNER envelope with the correct test proxy key => 200.
-- Owner configured-assets request unauthenticated => 401.
-- Owner configured-assets request with verified OWNER envelope => 200.
-- Core OpenAPI surface => 404.
-- Unsupported Core `DELETE` => 405.
-- Valid mission-proportional analytical POST => 200 while preserving `production_execution=false` and `human_governance_required=true`.
-- Request exceeding the configured Core Pilot body limit => 413.
-- Security headers include HSTS, frame denial, MIME-sniffing protection, referrer policy, permissions policy, COOP, and CORP.
+## CI evidence at branch head before this refresh
+- Public Repository Release Guard: **PASS**.
+- Pilot Control-Plane Gate: **PASS**.
+- Artifact Intake Gate: **FAIL**, as designed, because repository runtime ZIP copies remain truncated/corrupt.
+- Full Pilot Certification: **FAIL/HOLD at exact release bytes + ZIP integrity**; downstream manifest/structure/compile/image/runtime/identity gates are blocked or skipped and must not be represented as failed observations.
 
-The candidate also includes bounded Core request-body, concurrency, per-principal rate, and upstream-timeout controls. **This candidate is not yet the repository gateway and is not deployed.** Repository promotion remains HOLD until the exact reviewed gateway change is present in the Pilot branch and CI exercises it.
+## Exact repository blocker
+Observed repository copies remain:
+- Owner runtime: 7,509 bytes instead of approved 27,977 bytes.
+- Core runtime: 15,008 bytes instead of approved 95,596 bytes.
 
-## P0 blockers before hosted Pilot GO
-1. Replace the truncated/corrupt GitHub integrated runtime ZIPs with the preserved exact bytes; never change the manifest to bless damaged bytes.
-2. Promote the reviewed trusted-external-identity Core gateway hardening into the Pilot branch and rerun the encoded fail-closed CI checks.
-3. Promote and verify bounded request-body/rate/concurrency/timeout guardrails for analytical Core endpoints before Internet exposure.
-4. Promote only after CI rebuilds the exact integrated image from validated artifacts.
-5. Configure `CRYPTOSPHERE_OWNER_AUTH_MODE=external` and a deployment-only high-entropy `CRYPTOSPHERE_IDENTITY_PROXY_KEY`.
-6. Configure exactly one explicitly authorized public HTTPS:443 canary in `CRYPTOSPHERE_ASSETS_JSON`.
-7. Hosted verification: health, auth, URL non-disclosure, unknown asset 403, canary TLS/HTTP metadata, and security headers.
-8. Owner review of canary evidence, followed by an explicit Pilot GO/HOLD decision.
+Required repair is deliberately narrow: replace only
+- `deploy/cryptosphere-integrated/cryptosphere-owner-runtime.zip`
+- `deploy/cryptosphere-integrated/cryptosphere-core-runtime.zip`
+
+with the preserved exact approved bytes. **Do not modify `SHA256.txt` to match damaged bytes.**
+
+## Gates already closed
+The earlier gateway identity-perimeter, resource-guardrail, hosted-isolation, deployment-configuration, machine-readable-state, artifact-verifier, and control-plane-governance workstreams are no longer independent P0 blockers. They remain subject to full CI and hosted re-verification after exact artifact repair.
+
+## Promotion sequence
+1. Exact artifact repair.
+2. Artifact Intake Gate GREEN.
+3. Full Pilot Certification GREEN, including manifest, structure, syntax/compile, Docker build, integrated runtime/browser/API/security, and trusted identity fail-closed checks.
+4. Public Repository Release Guard GREEN and Pilot Control-Plane Gate GREEN on the same reviewed head.
+5. Deploy only to the isolated Railway Pilot boundary with `CRYPTOSPHERE_ASSETS_JSON=[]`.
+6. Hosted smoke/security acceptance with no external canary.
+7. Only after hosted acceptance, configure exactly one explicitly authorized public HTTPS:443 metadata-only canary and separately enable the canary switch.
+8. Review evidence and make an explicit human Pilot GO/HOLD decision before promotion is allowed.
 
 ## Governance boundary
+- authority mode: `ADVISORY_ONLY`
 - `production_execution=false`
-- `automatic_policy_activation=false`
-- `automatic_policy_mutation=false`
-- `automatic_evidence_collection=false`
-- `automatic_scheduling=false`
+- `autonomous_policy_change=false`
+- `autonomous_deployment=false`
 - `human_governance_required=true`
 
-## Disposition
-**HOLD for public Pilot; READY for continued local/integration certification work.**
+Designed, Engineered, and Built by: Azad Ahmed — In Mission To Solve Intelligence At Civilizational Scale.
