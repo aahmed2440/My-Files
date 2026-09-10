@@ -29,6 +29,7 @@ export function buildEvidencePassport({ manifest, adapter_manifest_sha256, event
       stream_key: continuity.stream_key,
       state: continuity.continuity,
       observation: continuity.observation,
+      observations: continuity.observations,
       sequence: continuity.sequence,
       sequence_gaps: continuity.sequence_gaps,
       sequence_duplicates: continuity.sequence_duplicates,
