@@ -10,17 +10,20 @@ export class IngestionHistorian {
     this.maxRecordBytes = Math.max(64 * 1024, Math.min(8 * 1024 * 1024, Number(maxRecordBytes) || 2 * 1024 * 1024));
     this.chainHead = null;
     this.initialized = false;
+    this.lastVerification = null;
     this.tail = Promise.resolve();
     this.recordsWrittenRuntime = 0;
   }
 
   async initialize() {
-    if (this.initialized) return;
+    if (this.initialized) return this.lastVerification;
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const verification = await this.verifyFile();
     if (!verification.verified) throw new Error(`INGESTION_HISTORIAN_INIT_${verification.reason}`);
     this.chainHead = verification.chain_head_sha256;
+    this.lastVerification = verification;
     this.initialized = true;
+    return verification;
   }
 
   append({ event, passport }) {
@@ -70,34 +73,48 @@ export class IngestionHistorian {
     let data;
     try { data = await readFile(this.filePath); }
     catch (err) {
-      if (err?.code === 'ENOENT') return { verified: true, records: 0, chain_head_sha256: null };
+      if (err?.code === 'ENOENT') return { verified: true, records: 0, chain_head_sha256: null, stream_tails: {} };
       throw err;
     }
-    if (data.length > maxBytes) return { verified: false, reason: 'VERIFY_BYTE_BUDGET_EXCEEDED', records: null, chain_head_sha256: null };
+    if (data.length > maxBytes) return { verified: false, reason: 'VERIFY_BYTE_BUDGET_EXCEEDED', records: null, chain_head_sha256: null, stream_tails: null };
     const lines = data.toString('utf8').split('\n').filter(Boolean);
     let previous = null;
+    const streamTails = {};
     for (let i = 0; i < lines.length; i += 1) {
       let entry;
       try { entry = JSON.parse(lines[i]); }
-      catch { return { verified: false, reason: 'INVALID_JSON', record_index: i, records: lines.length, chain_head_sha256: previous }; }
+      catch { return { verified: false, reason: 'INVALID_JSON', record_index: i, records: lines.length, chain_head_sha256: previous, stream_tails: null }; }
       try {
         const fingerprint = fingerprintMarketEvent(entry.event);
         const passportBase = Object.fromEntries(Object.entries(entry.passport ?? {}).filter(([k]) => k !== 'passport_sha256'));
         const passportSha = sha256(canonicalJson(passportBase));
         if (fingerprint.event_sha256 !== entry.passport?.event_sha256 || passportSha !== entry.passport?.passport_sha256) {
-          return { verified: false, reason: 'PASSPORT_MISMATCH', record_index: i, records: lines.length, chain_head_sha256: previous };
+          return { verified: false, reason: 'PASSPORT_MISMATCH', record_index: i, records: lines.length, chain_head_sha256: previous, stream_tails: null };
         }
         const recordSha = sha256(canonicalJson({ event: fingerprint.event, passport: entry.passport }));
         const expectedChain = sha256(canonicalJson({ previous_chain_sha256: previous, record_sha256: recordSha }));
         if (entry.previous_chain_sha256 !== previous || entry.record_sha256 !== recordSha || entry.chain_sha256 !== expectedChain) {
-          return { verified: false, reason: 'CHAIN_MISMATCH', record_index: i, records: lines.length, chain_head_sha256: previous };
+          return { verified: false, reason: 'CHAIN_MISMATCH', record_index: i, records: lines.length, chain_head_sha256: previous, stream_tails: null };
+        }
+        const streamKey = entry.passport?.continuity?.stream_key;
+        if (streamKey) {
+          streamTails[streamKey] = {
+            sequence: entry.event.sequence,
+            source_ts: entry.event.source_ts,
+            passport_sha256: entry.passport.passport_sha256,
+            observations: entry.passport?.continuity?.observations ?? i + 1,
+            sequence_gaps: entry.passport?.continuity?.sequence_gaps ?? 0,
+            sequence_duplicates: entry.passport?.continuity?.sequence_duplicates ?? 0,
+            sequence_regressions: entry.passport?.continuity?.sequence_regressions ?? 0,
+            timestamp_regressions: entry.passport?.continuity?.timestamp_regressions ?? 0
+          };
         }
         previous = expectedChain;
       } catch {
-        return { verified: false, reason: 'INVALID_RECORD', record_index: i, records: lines.length, chain_head_sha256: previous };
+        return { verified: false, reason: 'INVALID_RECORD', record_index: i, records: lines.length, chain_head_sha256: previous, stream_tails: null };
       }
     }
-    return { verified: true, records: lines.length, chain_head_sha256: previous };
+    return { verified: true, records: lines.length, chain_head_sha256: previous, stream_tails: streamTails };
   }
 
   status() {
