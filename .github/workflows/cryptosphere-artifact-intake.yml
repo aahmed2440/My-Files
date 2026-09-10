@@ -2,12 +2,8 @@ name: CryptoSphere — Artifact Intake Gate
 
 on:
   pull_request:
-    paths:
-      - 'deploy/cryptosphere-integrated/cryptosphere-owner-runtime.zip'
-      - 'deploy/cryptosphere-integrated/cryptosphere-core-runtime.zip'
-      - 'deploy/cryptosphere-integrated/SHA256.txt'
-      - 'deploy/cryptosphere-integrated/verify-pilot-artifacts.sh'
-      - '.github/workflows/cryptosphere-artifact-intake.yml'
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -16,6 +12,7 @@ permissions:
 jobs:
   artifact-intake:
     name: Exact approved Pilot artifacts
+    if: startsWith(github.head_ref, 'cryptosphere/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -35,6 +32,7 @@ jobs:
           {
             echo '## CryptoSphere Artifact Intake Gate'
             echo
+            echo '- Runs on every CryptoSphere PR head targeting main so same-head certification cannot be bypassed by unrelated commits.'
             echo '- Exact approved byte counts are enforced before runtime certification.'
             echo '- Exact SHA-256 digests are enforced.'
             echo '- ZIP integrity is enforced.'
