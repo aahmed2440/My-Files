@@ -12,11 +12,14 @@
 - Hosted acceptance harness is committed and is explicitly non-executing/non-autonomous.
 - Dedicated isolated Railway Pilot boundary is provisioned and fail-closed; source deployment has not started.
 
-## CI evidence at branch head before this refresh
-- Public Repository Release Guard: **PASS**.
-- Pilot Control-Plane Gate: **PASS**.
-- Artifact Intake Gate: **FAIL**, as designed, because repository runtime ZIP copies remain truncated/corrupt.
-- Full Pilot Certification: **FAIL/HOLD at exact release bytes + ZIP integrity**; downstream manifest/structure/compile/image/runtime/identity gates are blocked or skipped and must not be represented as failed observations.
+## Verified CI evidence
+At the last observed CI cycle before this evidence refresh:
+- Public Repository Release Guard run `34539135889`: **PASS**.
+- Pilot Control-Plane Gate run `34539135919`: **PASS**.
+- Artifact Intake Gate run `34539135943`: **FAIL**, as designed, because repository runtime ZIP copies remain truncated/corrupt.
+- Full Pilot Certification run `34539135897`: **FAIL/HOLD at exact release bytes + ZIP integrity**; downstream manifest/structure/compile/image/runtime/identity gates are blocked or skipped and must not be represented as failed observations.
+
+Any later commit must earn these gates again; a historical PASS is evidence, not authorization for a newer head.
 
 ## Exact repository blocker
 Observed repository copies remain:
@@ -29,8 +32,8 @@ Required repair is deliberately narrow: replace only
 
 with the preserved exact approved bytes. **Do not modify `SHA256.txt` to match damaged bytes.**
 
-## Gates already closed
-The earlier gateway identity-perimeter, resource-guardrail, hosted-isolation, deployment-configuration, machine-readable-state, artifact-verifier, and control-plane-governance workstreams are no longer independent P0 blockers. They remain subject to full CI and hosted re-verification after exact artifact repair.
+## Gates already closed as implementation blockers
+The earlier gateway identity-perimeter, resource-guardrail, hosted-isolation, deployment-configuration, machine-readable-state, artifact-verifier, and control-plane-governance workstreams are no longer independent P0 implementation blockers. They remain subject to full CI and hosted re-verification after exact artifact repair.
 
 ## Promotion sequence
 1. Exact artifact repair.
