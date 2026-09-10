@@ -1,13 +1,14 @@
 {
-  "name": "marketsphere-ingestion-cert",
-  "version": "0.7.0-ingestion-contract-cert",
+  "name": "marketsphere-empirical-cert",
+  "version": "0.8.0-empirical-quorum-cert",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/ingestion_server.mjs",
+    "start": "node src/empirical_server.mjs",
+    "start:ingestion": "node src/ingestion_server.mjs",
     "start:replay": "node src/server.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/schema.mjs && node --check src/historian.mjs && node --check src/replay_engine.mjs && node --check src/server.mjs && node --check src/adapter_contract.mjs && node --check src/continuity.mjs && node --check src/evidence_passport.mjs && node --check src/ingestion_historian.mjs && node --check src/ingestion_engine.mjs && node --check src/ingestion_cert_engine.mjs && node --check src/ingestion_server.mjs"
+    "check": "node --check src/schema.mjs && node --check src/historian.mjs && node --check src/replay_engine.mjs && node --check src/server.mjs && node --check src/adapter_contract.mjs && node --check src/continuity.mjs && node --check src/evidence_passport.mjs && node --check src/ingestion_historian.mjs && node --check src/ingestion_engine.mjs && node --check src/ingestion_cert_engine.mjs && node --check src/ingestion_server.mjs && node --check src/public_yield_sources.mjs && node --check src/quorum_engine.mjs && node --check src/empirical_cert_engine.mjs && node --check src/empirical_server.mjs"
   },
   "engines": { "node": ">=22" }
 }
