@@ -2,11 +2,8 @@ name: CryptoSphere — Pilot Control-Plane Gate
 
 on:
   pull_request:
-    paths:
-      - 'deploy/cryptosphere-integrated/PILOT_STATE.json'
-      - 'deploy/cryptosphere-integrated/SHA256.txt'
-      - 'deploy/cryptosphere-integrated/verify-pilot-control-plane.py'
-      - '.github/workflows/cryptosphere-pilot-control-plane.yml'
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -15,6 +12,7 @@ permissions:
 jobs:
   control-plane:
     name: Fail-closed governance and promotion boundary
+    if: startsWith(github.head_ref, 'cryptosphere/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -34,6 +32,7 @@ jobs:
           {
             echo '## CryptoSphere Pilot Control-Plane Gate'
             echo
+            echo '- Runs on every CryptoSphere PR head targeting main so governance evidence is bound to the exact candidate revision.'
             echo '- Pilot disposition must remain HOLD before certification.'
             echo '- Analytical authority must remain ADVISORY_ONLY.'
             echo '- Production execution, autonomous policy change, and autonomous deployment must remain false.'
