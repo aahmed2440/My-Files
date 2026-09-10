@@ -43,12 +43,22 @@ jobs:
               'bounded analytical body': 'MAX_SAFE_POST_BODY_BYTES = 64 * 1024',
               'atomic sibling termination': 'terminateSiblingProcesses(child)',
               'child-failure shutdown latch': 'shuttingDown = true',
+              'content security policy': "Content-Security-Policy",
+              'hsts': 'Strict-Transport-Security',
           }
           missing = [name for name, needle in required.items() if needle not in text]
           if missing:
               print('::error::Missing PRIMETIME governance invariant(s): ' + ', '.join(missing))
               sys.exit(1)
+
+          gate_pos = text.find('const policy = requestPolicy(req.method, u.pathname)')
+          health_pos = text.find("if (u.pathname === '/health' || u.pathname === '/api/health')")
+          if gate_pos < 0 or health_pos < 0 or gate_pos > health_pos:
+              print('::error::Capability policy must execute before health/metadata route handling.')
+              sys.exit(1)
+
           print('CryptoSphere capability-based governance invariants: PASS')
+          print('Capability gate ordering before health routes: PASS')
 
       - name: Verify non-root and build-integrity posture
         shell: bash
@@ -63,6 +73,8 @@ jobs:
             echo '## CryptoSphere PRIMETIME static governance gate'
             echo '- Gateway syntax: PASS'
             echo '- Capability-based governance invariants: PASS'
+            echo '- Capability gate ordering before health routes: PASS'
+            echo '- CSP/HSTS presence: PASS'
             echo '- Atomic sibling termination invariant: PASS'
             echo '- Non-root runtime posture: PASS'
             echo '- Build-time SHA enforcement is present: PASS'
