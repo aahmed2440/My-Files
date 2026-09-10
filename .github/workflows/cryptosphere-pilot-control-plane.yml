@@ -16,8 +16,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout immutable action
+      - name: Checkout exact candidate SHA
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind workspace to candidate SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
+          echo "Candidate SHA binding: ${ACTUAL_SHA}"
 
       - name: Verify Pilot control-plane invariants
         shell: bash
@@ -32,6 +44,7 @@ jobs:
           {
             echo '## CryptoSphere Pilot Control-Plane Gate'
             echo
+            echo '- Checks out and verifies the exact PR head candidate SHA, not the synthetic PR merge ref.'
             echo '- Runs on every CryptoSphere PR head targeting main so governance evidence is bound to the exact candidate revision.'
             echo '- Pilot disposition must remain HOLD before certification.'
             echo '- Analytical authority must remain ADVISORY_ONLY.'
