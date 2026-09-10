@@ -1,8 +1,4 @@
-[build]
-builder = "RAILPACK"
-
 [deploy]
-startCommand = "node src/server.mjs"
 healthcheckPath = "/health/ready"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
