@@ -1,0 +1,45 @@
+name: CryptoSphere — Pilot Control-Plane Gate
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cryptosphere-integrated/PILOT_STATE.json'
+      - 'deploy/cryptosphere-integrated/SHA256.txt'
+      - 'deploy/cryptosphere-integrated/verify-pilot-control-plane.py'
+      - '.github/workflows/cryptosphere-pilot-control-plane.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  control-plane:
+    name: Fail-closed governance and promotion boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable action
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify Pilot control-plane invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/cryptosphere-integrated/verify-pilot-control-plane.py
+
+      - name: Record authority boundary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## CryptoSphere Pilot Control-Plane Gate'
+            echo
+            echo '- Pilot disposition must remain HOLD before certification.'
+            echo '- Analytical authority must remain ADVISORY_ONLY.'
+            echo '- Production execution, autonomous policy change, and autonomous deployment must remain false.'
+            echo '- Human governance remains mandatory.'
+            echo '- Railway project/environment/service IDs are pinned to the isolated Pilot boundary.'
+            echo '- Source deployment, public domain, external canary, and promotion remain disabled.'
+            echo '- PILOT_STATE artifact digests must agree exactly with SHA256.txt.'
+            echo '- This workflow performs no deployment, promotion, external contact, secret access, or authority increase.'
+          } >> "$GITHUB_STEP_SUMMARY"
