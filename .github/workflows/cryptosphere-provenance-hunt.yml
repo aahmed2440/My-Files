@@ -1,0 +1,87 @@
+name: CryptoSphere Provenance Hunt
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cryptosphere-integrated/**'
+      - '.github/workflows/cryptosphere-provenance-hunt.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  find-approved-bytes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout full immutable history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Search history for approved runtime hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          OWNER_EXPECTED='6d58d4023eedbf319a162f15541628c512acb9751a06d47dcc049d5d988dd146'
+          CORE_EXPECTED='bc2c527f358174715b569c32f10d9a28f85d8d8724fcbae407963c9922a1b997'
+          OWNER_PATH='deploy/cryptosphere-integrated/cryptosphere-owner-runtime.zip'
+          CORE_PATH='deploy/cryptosphere-integrated/cryptosphere-core-runtime.zip'
+
+          : > /tmp/cs-provenance.txt
+          search_one() {
+            expected="$1"
+            path="$2"
+            label="$3"
+            found=0
+            while IFS= read -r commit; do
+              if git cat-file -e "${commit}:${path}" 2>/dev/null; then
+                actual="$(git show "${commit}:${path}" | sha256sum | awk '{print $1}')"
+                if [ "$actual" = "$expected" ]; then
+                  printf '%s MATCH commit=%s sha256=%s path=%s\n' "$label" "$commit" "$actual" "$path" | tee -a /tmp/cs-provenance.txt
+                  found=1
+                fi
+              fi
+            done < <(git rev-list --all -- "$path")
+            if [ "$found" = 0 ]; then
+              printf '%s NO_MATCH expected_sha256=%s path=%s\n' "$label" "$expected" "$path" | tee -a /tmp/cs-provenance.txt
+            fi
+          }
+
+          search_one "$OWNER_EXPECTED" "$OWNER_PATH" OWNER
+          search_one "$CORE_EXPECTED" "$CORE_PATH" CORE
+
+      - name: Search all refs at current path identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          for ref in $(git for-each-ref --format='%(refname)' refs/remotes/origin refs/tags | grep -v '/HEAD$'); do
+            short="${ref#refs/remotes/origin/}"
+            for name in owner core; do
+              path="deploy/cryptosphere-integrated/cryptosphere-${name}-runtime.zip"
+              if git cat-file -e "${ref}:${path}" 2>/dev/null; then
+                sha="$(git show "${ref}:${path}" | sha256sum | awk '{print $1}')"
+                printf '%s %s %s\n' "$short" "$name" "$sha"
+              fi
+            done
+          done | sort -u > /tmp/cs-ref-identities.txt
+          cat /tmp/cs-ref-identities.txt
+
+      - name: Gate outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat /tmp/cs-provenance.txt
+          owner_matches="$(grep -c '^OWNER MATCH ' /tmp/cs-provenance.txt || true)"
+          core_matches="$(grep -c '^CORE MATCH ' /tmp/cs-provenance.txt || true)"
+          {
+            echo '## CryptoSphere provenance hunt'
+            echo "- Approved Owner matches in reachable history: ${owner_matches}"
+            echo "- Approved Core matches in reachable history: ${core_matches}"
+            echo '- This workflow is forensic only: it never copies, approves, merges, or deploys runtime bytes.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$owner_matches" -lt 1 ] || [ "$core_matches" -lt 1 ]; then
+            echo '::error::At least one approved runtime hash was not found in reachable Git history. Rebuild from authoritative source or recover from an independently trusted artifact store.'
+            exit 1
+          fi
