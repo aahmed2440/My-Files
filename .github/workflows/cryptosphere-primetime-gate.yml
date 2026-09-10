@@ -41,6 +41,8 @@ jobs:
               'proxy-chain sanitization': "delete headers['x-forwarded-for']",
               'identity assertion sanitization': "'x-cryptosphere-proxy-key'",
               'bounded analytical body': 'MAX_SAFE_POST_BODY_BYTES = 64 * 1024',
+              'atomic sibling termination': 'terminateSiblingProcesses(child)',
+              'child-failure shutdown latch': 'shuttingDown = true',
           }
           missing = [name for name, needle in required.items() if needle not in text]
           if missing:
@@ -61,6 +63,7 @@ jobs:
             echo '## CryptoSphere PRIMETIME static governance gate'
             echo '- Gateway syntax: PASS'
             echo '- Capability-based governance invariants: PASS'
+            echo '- Atomic sibling termination invariant: PASS'
             echo '- Non-root runtime posture: PASS'
             echo '- Build-time SHA enforcement is present: PASS'
             echo '- Production promotion: NOT AUTHORIZED BY THIS WORKFLOW'
