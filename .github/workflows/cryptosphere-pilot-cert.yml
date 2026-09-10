@@ -14,7 +14,9 @@ env:
   CS_DIR: deploy/cryptosphere-integrated
   CS_IMAGE: cryptosphere:pilot-cert
   CS_CONTAINER: cryptosphere-pilot-cert
+  CS_AUTH_CONTAINER: cryptosphere-pilot-auth-cert
   CS_PORT: '18080'
+  CS_AUTH_PORT: '18081'
 
 jobs:
   certify:
@@ -130,6 +132,7 @@ jobs:
           curl -fsS "http://127.0.0.1:${CS_PORT}/" >/dev/null
           curl -fsS "http://127.0.0.1:${CS_PORT}/core/" >/dev/null
           curl -fsS "http://127.0.0.1:${CS_PORT}/core/health/ready" >/dev/null
+          curl -fsS "http://127.0.0.1:${CS_PORT}/core/api/v1/status" >/dev/null
 
           headers="$(curl -fsSI "http://127.0.0.1:${CS_PORT}/health" | tr -d '\r')"
           grep -qi '^x-content-type-options: nosniff$' <<<"${headers}"
@@ -137,7 +140,77 @@ jobs:
           grep -qi '^referrer-policy: no-referrer$' <<<"${headers}"
           grep -qi '^strict-transport-security: max-age=31536000$' <<<"${headers}"
 
-          echo 'Browser surfaces, Core readiness, and security headers: PASS'
+          echo 'Browser surfaces, Core API readiness, and security headers: PASS'
+
+      - name: Require fail-closed trusted identity perimeter
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_KEY='ci-only-test-key-not-a-deployment-secret'
+
+          cleanup() {
+            docker logs "${CS_AUTH_CONTAINER}" > /tmp/cryptosphere-pilot-auth.log 2>&1 || true
+            docker rm -f "${CS_AUTH_CONTAINER}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d \
+            --name "${CS_AUTH_CONTAINER}" \
+            -p "${CS_AUTH_PORT}:8080" \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e CRYPTOSPHERE_OWNER_AUTH_MODE=external \
+            -e CRYPTOSPHERE_IDENTITY_PROXY_KEY="${TEST_KEY}" \
+            -e CRYPTOSPHERE_ASSETS_JSON='[]' \
+            "${CS_IMAGE}" >/dev/null
+
+          ready=0
+          for i in $(seq 1 45); do
+            if curl -fsS "http://127.0.0.1:${CS_AUTH_PORT}/health" >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "${ready}" -eq 1
+
+          code="$(curl -sS -o /tmp/owner-unauth.json -w '%{http_code}' "http://127.0.0.1:${CS_AUTH_PORT}/api/assets")"
+          test "${code}" = '401'
+
+          code="$(curl -sS -o /tmp/core-unauth.json -w '%{http_code}' "http://127.0.0.1:${CS_AUTH_PORT}/core/api/v1/status")"
+          test "${code}" = '401'
+
+          code="$(curl -sS -o /tmp/core-spoof.json -w '%{http_code}' \
+            -H 'x-cryptosphere-principal: spoofed.client' \
+            -H 'x-cryptosphere-role: OWNER' \
+            -H 'x-cryptosphere-assurance: VERIFIED' \
+            "http://127.0.0.1:${CS_AUTH_PORT}/core/api/v1/status")"
+          test "${code}" = '401'
+
+          code="$(curl -sS -o /tmp/core-viewer.json -w '%{http_code}' \
+            -H 'x-cryptosphere-principal: pilot.viewer' \
+            -H 'x-cryptosphere-role: VIEWER' \
+            -H 'x-cryptosphere-assurance: PHISHING_RESISTANT' \
+            -H "x-cryptosphere-proxy-key: ${TEST_KEY}" \
+            "http://127.0.0.1:${CS_AUTH_PORT}/core/api/v1/status")"
+          test "${code}" = '401'
+
+          code="$(curl -sS -o /tmp/core-owner.json -w '%{http_code}' \
+            -H 'x-cryptosphere-principal: pilot.owner' \
+            -H 'x-cryptosphere-role: OWNER' \
+            -H 'x-cryptosphere-assurance: PHISHING_RESISTANT' \
+            -H "x-cryptosphere-proxy-key: ${TEST_KEY}" \
+            "http://127.0.0.1:${CS_AUTH_PORT}/core/api/v1/status")"
+          test "${code}" = '200'
+
+          code="$(curl -sS -o /tmp/owner-owner.json -w '%{http_code}' \
+            -H 'x-cryptosphere-principal: pilot.owner' \
+            -H 'x-cryptosphere-role: OWNER' \
+            -H 'x-cryptosphere-assurance: PHISHING_RESISTANT' \
+            -H "x-cryptosphere-proxy-key: ${TEST_KEY}" \
+            "http://127.0.0.1:${CS_AUTH_PORT}/api/assets")"
+          test "${code}" = '200'
+
+          echo 'Trusted identity perimeter fails closed and admits only a verified privileged envelope: PASS'
 
       - name: Pilot certification summary
         if: always()
@@ -153,8 +226,10 @@ jobs:
             echo '- Gateway, recovery shell, Owner syntax and Core Python compile gates checked'
             echo '- Integrated image built from deploy/cryptosphere-integrated/Dockerfile'
             echo '- Owner Console + Analytical Core aggregate readiness exercised'
-            echo '- Root, /core/, and Core readiness browser/API paths exercised'
+            echo '- Root, /core/, Core readiness, and Core API paths exercised'
             echo '- Security response headers checked'
+            echo '- External identity mode must reject unauthenticated, spoofed, and unprivileged Core requests'
+            echo '- Verified privileged identity envelope must pass Owner and Core read-only surfaces'
             echo '- Advisory-only mode, no production execution, and human governance asserted'
-            echo '- This workflow does NOT deploy, promote, mutate production, or enable autonomous authority'
+            echo '- This workflow does NOT deploy, promote, mutate production, contact external assets, or enable autonomous authority'
           } >> "$GITHUB_STEP_SUMMARY"
