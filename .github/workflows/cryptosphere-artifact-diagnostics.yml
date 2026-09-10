@@ -1,0 +1,49 @@
+name: CryptoSphere Artifact Diagnostics
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cryptosphere-integrated/**'
+      - '.github/workflows/cryptosphere-artifact-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  artifact-diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Report actual artifact identities
+        working-directory: deploy/cryptosphere-integrated
+        run: |
+          set -euo pipefail
+          echo '--- manifest ---'
+          cat SHA256.txt
+          echo '--- actual ---'
+          sha256sum cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip
+          echo '--- sizes ---'
+          stat -c '%n %s bytes' cryptosphere-owner-runtime.zip cryptosphere-core-runtime.zip
+
+      - name: Validate ZIP integrity without extraction
+        shell: python
+        run: |
+          import pathlib, stat, zipfile
+          root=pathlib.Path('deploy/cryptosphere-integrated')
+          for archive in [root/'cryptosphere-owner-runtime.zip', root/'cryptosphere-core-runtime.zip']:
+              with zipfile.ZipFile(archive) as z:
+                  bad=z.testzip()
+                  if bad:
+                      raise SystemExit(f'{archive}: CRC failure at {bad}')
+                  unsafe=[]
+                  for info in z.infolist():
+                      p=pathlib.PurePosixPath(info.filename)
+                      mode=(info.external_attr >> 16) & 0o170000
+                      if p.is_absolute() or '..' in p.parts or mode == stat.S_IFLNK:
+                          unsafe.append(info.filename)
+                  if unsafe:
+                      raise SystemExit(f'{archive}: unsafe entries: {unsafe}')
+                  print(f'{archive}: PASS entries={len(z.infolist())}')
