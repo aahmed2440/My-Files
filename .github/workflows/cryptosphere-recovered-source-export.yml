@@ -1,0 +1,127 @@
+name: CryptoSphere Recovered Source Export
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cryptosphere-integrated/**'
+      - '.github/workflows/cryptosphere-recovered-source-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Recover complete CRC-verified local ZIP entries
+        shell: python
+        run: |
+          import binascii, hashlib, json, pathlib, struct, zlib, shutil
+
+          srcroot = pathlib.Path('deploy/cryptosphere-integrated')
+          outroot = pathlib.Path('/tmp/cs-export')
+          shutil.rmtree(outroot, ignore_errors=True)
+          outroot.mkdir(parents=True)
+          sig_local = 0x04034B50
+          forensic = {}
+
+          for label in ('owner', 'core'):
+              src = srcroot / f'cryptosphere-{label}-runtime.zip'
+              raw = src.read_bytes()
+              outdir = outroot / label
+              outdir.mkdir()
+              offset = 0
+              entries = []
+              stop_reason = 'eof'
+
+              while offset + 30 <= len(raw):
+                  sig = struct.unpack_from('<I', raw, offset)[0]
+                  if sig != sig_local:
+                      stop_reason = f'non_local_signature@{offset}:0x{sig:08x}'
+                      break
+                  (_, ver, flags, method, mtime, mdate, crc_expected,
+                   comp_size, uncomp_size, name_len, extra_len) = struct.unpack_from('<IHHHHHIIIHH', raw, offset)
+                  header_end = offset + 30 + name_len + extra_len
+                  if header_end > len(raw):
+                      stop_reason = f'truncated_header@{offset}'
+                      break
+                  name = raw[offset+30:offset+30+name_len].decode('utf-8')
+                  p = pathlib.PurePosixPath(name)
+                  if p.is_absolute() or '..' in p.parts or '\\' in name:
+                      raise SystemExit(f'unsafe path: {name!r}')
+                  if flags & 0x0001:
+                      raise SystemExit(f'encrypted entry prohibited: {name}')
+                  if flags & 0x0008:
+                      stop_reason = f'data_descriptor_ambiguous:{name}'
+                      break
+                  data_start = header_end
+                  data_end = data_start + comp_size
+                  if data_end > len(raw):
+                      stop_reason = f'truncated_data:{name}'
+                      break
+                  comp = raw[data_start:data_end]
+                  try:
+                      if method == 0:
+                          plain = comp
+                      elif method == 8:
+                          plain = zlib.decompress(comp, -15)
+                      else:
+                          stop_reason = f'unsupported_method_{method}:{name}'
+                          break
+                  except zlib.error as e:
+                      stop_reason = f'deflate_error:{name}:{e}'
+                      break
+                  if len(plain) != uncomp_size:
+                      stop_reason = f'size_mismatch:{name}'
+                      break
+                  crc_actual = binascii.crc32(plain) & 0xffffffff
+                  if crc_actual != crc_expected:
+                      stop_reason = f'crc_mismatch:{name}'
+                      break
+
+                  dest = outdir.joinpath(*p.parts)
+                  if name.endswith('/'):
+                      dest.mkdir(parents=True, exist_ok=True)
+                  else:
+                      dest.parent.mkdir(parents=True, exist_ok=True)
+                      dest.write_bytes(plain)
+                  entries.append({
+                      'path': name,
+                      'bytes': len(plain),
+                      'sha256': hashlib.sha256(plain).hexdigest(),
+                      'crc32': f'{crc_actual:08x}'
+                  })
+                  offset = data_end
+
+              if not entries:
+                  raise SystemExit(f'{label}: zero complete verifiable entries')
+              forensic[label] = {
+                  'source_file': src.name,
+                  'source_bytes': len(raw),
+                  'source_sha256': hashlib.sha256(raw).hexdigest(),
+                  'recovered_complete_entries': len(entries),
+                  'stop_reason': stop_reason,
+                  'entries': entries
+              }
+
+          (outroot/'FORENSIC_INVENTORY.json').write_text(json.dumps(forensic, indent=2) + '\n')
+          (outroot/'README.txt').write_text(
+              'CryptoSphere forensic recovered-source export.\n'
+              'Only complete ZIP local records with verified size and CRC are included.\n'
+              'Missing/truncated files are intentionally absent.\n'
+              'This artifact is evidence only and is NOT an approved release artifact.\n'
+          )
+          print((outroot/'FORENSIC_INVENTORY.json').read_text())
+
+      - name: Upload recovered-source evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cryptosphere-recovered-source-evidence
+          path: /tmp/cs-export
+          if-no-files-found: error
+          retention-days: 7
