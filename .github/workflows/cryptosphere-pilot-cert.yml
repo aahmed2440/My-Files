@@ -1,0 +1,150 @@
+name: CryptoSphere — Pilot Certification
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cryptosphere-integrated/**'
+      - '.github/workflows/cryptosphere-pilot-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CS_DIR: deploy/cryptosphere-integrated
+  CS_IMAGE: cryptosphere:pilot-cert
+  CS_CONTAINER: cryptosphere-pilot-cert
+  CS_PORT: '18080'
+
+jobs:
+  certify:
+    name: Verify release bytes and integrated runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout immutable action
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up verified Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+
+      - name: Verify exact release bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${CS_DIR}"
+          sha256sum -c SHA256.txt
+          unzip -t cryptosphere-owner-runtime.zip
+          unzip -t cryptosphere-core-runtime.zip
+
+      - name: Verify expected package structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cs-owner /tmp/cs-core
+          mkdir -p /tmp/cs-owner /tmp/cs-core
+          unzip -q "${CS_DIR}/cryptosphere-owner-runtime.zip" -d /tmp/cs-owner
+          unzip -q "${CS_DIR}/cryptosphere-core-runtime.zip" -d /tmp/cs-core
+
+          test -f /tmp/cs-owner/server.mjs
+          test -f /tmp/cs-core/server.py
+          test -f /tmp/cs-core/requirements.txt
+          test -f /tmp/cs-core/app.js
+
+          echo 'Expected Owner/Core package structure present.'
+
+      - name: Static syntax and compile gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check "${CS_DIR}/gateway.mjs"
+          node --check "${CS_DIR}/recovery-server.mjs"
+          node --check /tmp/cs-owner/server.mjs
+          python3 -m compileall -q /tmp/cs-core
+
+      - name: Build exact integrated Pilot image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull --no-cache -t "${CS_IMAGE}" "${CS_DIR}"
+
+      - name: Run integrated image and certify readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup() {
+            docker logs "${CS_CONTAINER}" > /tmp/cryptosphere-pilot.log 2>&1 || true
+            docker rm -f "${CS_CONTAINER}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d \
+            --name "${CS_CONTAINER}" \
+            -p "${CS_PORT}:8080" \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            "${CS_IMAGE}" >/dev/null
+
+          ready=0
+          for i in $(seq 1 45); do
+            if curl -fsS "http://127.0.0.1:${CS_PORT}/health" > /tmp/cs-health.json; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "${ready}" -ne 1 ]; then
+            echo 'Integrated CryptoSphere runtime did not become ready.' >&2
+            docker logs "${CS_CONTAINER}" >&2 || true
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          h = json.loads(Path('/tmp/cs-health.json').read_text())
+          assert h.get('status') == 'ready', h
+          assert h.get('product') == 'CryptoSphere', h
+          assert h.get('owner_console', {}).get('version') == '1.4.1', h
+          assert h.get('owner_console', {}).get('ready') is True, h
+          assert h.get('analytical_core', {}).get('version') == '0.90.1', h
+          assert h.get('analytical_core', {}).get('ready') is True, h
+          assert h.get('analytical_core', {}).get('mode') == 'ADVISORY_ONLY', h
+          assert h.get('production_execution') is False, h
+          assert h.get('human_governance_required') is True, h
+          print('Health contract: PASS')
+          PY
+
+          curl -fsS "http://127.0.0.1:${CS_PORT}/" >/dev/null
+          curl -fsS "http://127.0.0.1:${CS_PORT}/core/" >/dev/null
+          curl -fsS "http://127.0.0.1:${CS_PORT}/core/health/ready" >/dev/null
+
+          headers="$(curl -fsSI "http://127.0.0.1:${CS_PORT}/health" | tr -d '\r')"
+          grep -qi '^x-content-type-options: nosniff$' <<<"${headers}"
+          grep -qi '^x-frame-options: DENY$' <<<"${headers}"
+          grep -qi '^referrer-policy: no-referrer$' <<<"${headers}"
+          grep -qi '^strict-transport-security: max-age=31536000$' <<<"${headers}"
+
+          echo 'Browser surfaces, Core readiness, and security headers: PASS'
+
+      - name: Pilot certification summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## CryptoSphere Pilot Certification'
+            echo
+            echo '- Exact Owner/Core release-byte hashes checked against SHA256.txt'
+            echo '- ZIP integrity and expected package structure checked'
+            echo '- Gateway, recovery shell, Owner syntax and Core Python compile gates checked'
+            echo '- Integrated image built from deploy/cryptosphere-integrated/Dockerfile'
+            echo '- Owner Console + Analytical Core aggregate readiness exercised'
+            echo '- Root, /core/, and Core readiness browser/API paths exercised'
+            echo '- Security response headers checked'
+            echo '- Advisory-only mode, no production execution, and human governance asserted'
+            echo '- This workflow does NOT deploy, promote, mutate production, or enable autonomous authority'
+          } >> "$GITHUB_STEP_SUMMARY"
