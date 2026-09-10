@@ -1,6 +1,12 @@
 import crypto from 'node:crypto';
 
 export const MARKET_EVENT_SCHEMA_VERSION = 1;
+export const MARKET_EVENT_SOURCE_CLASSIFICATIONS = Object.freeze([
+  'SYNTHETIC_CERT_REPLAY',
+  'PUBLIC_OFFICIAL',
+  'AGENCY_OFFICIAL',
+  'EXCHANGE_REFERENCE'
+]);
 
 export function canonicalJson(value) {
   if (value === null) return 'null';
@@ -27,30 +33,32 @@ function nullableSequence(value) {
 }
 
 export function normalizeMarketEvent(input) {
-  if (input?.source_classification !== 'SYNTHETIC_CERT_REPLAY') {
-    throw new Error('REPLAY_SOURCE_CLASSIFICATION_REQUIRED');
+  const sourceClassification = safeString(input?.source_classification, 64).toUpperCase();
+  if (!MARKET_EVENT_SOURCE_CLASSIFICATIONS.includes(sourceClassification)) {
+    throw new Error('MARKET_EVENT_SOURCE_CLASSIFICATION_REJECTED');
   }
   const symbol = safeString(input?.symbol, 64);
   if (!symbol) throw new Error('SYMBOL_REQUIRED');
   const sourceTs = Date.parse(String(input?.source_ts ?? ''));
   const receiveTs = Date.parse(String(input?.receive_ts ?? ''));
   if (!Number.isFinite(sourceTs) || !Number.isFinite(receiveTs)) throw new Error('VALID_TIMESTAMPS_REQUIRED');
+  if (receiveTs + 1000 < sourceTs) throw new Error('RECEIVE_TIMESTAMP_PRECEDES_SOURCE');
 
   return {
     market_event_schema_version: MARKET_EVENT_SCHEMA_VERSION,
-    source_classification: 'SYNTHETIC_CERT_REPLAY',
-    source: safeString(input?.source || 'MARKETSPHERE_REPLAY', 64),
-    provider: safeString(input?.provider || 'MarketSphere Deterministic Replay', 128),
-    asset_class: safeString(input?.asset_class || 'EQUITY', 32),
+    source_classification: sourceClassification,
+    source: safeString(input?.source || 'UNSPECIFIED_SOURCE', 64),
+    provider: safeString(input?.provider || 'UNSPECIFIED_PROVIDER', 128),
+    asset_class: safeString(input?.asset_class || 'UNKNOWN', 32),
     instrument_id: safeString(input?.instrument_id || symbol, 128),
     symbol,
-    venue: safeString(input?.venue || 'SYNTHETIC', 64),
-    event_type: safeString(input?.event_type || 'QUOTE', 32),
+    venue: safeString(input?.venue || 'UNKNOWN', 64),
+    event_type: safeString(input?.event_type || 'OBSERVATION', 32),
     source_ts: new Date(sourceTs).toISOString(),
     receive_ts: new Date(receiveTs).toISOString(),
     sequence: nullableSequence(input?.sequence),
     fields: input?.fields && typeof input.fields === 'object' && !Array.isArray(input.fields) ? input.fields : {},
-    quality_flags: Array.isArray(input?.quality_flags) ? [...new Set(input.quality_flags.map(x => safeString(x, 64)))].sort() : ['SYNTHETIC']
+    quality_flags: Array.isArray(input?.quality_flags) ? [...new Set(input.quality_flags.map(x => safeString(x, 64)))].sort() : []
   };
 }
 
