@@ -11,15 +11,16 @@
 - Hardened integrated gateway is committed on the Pilot branch. Trusted-external-identity rejection/acceptance behavior and bounded body/concurrency/rate/timeout controls passed controlled local acceptance.
 - Hosted acceptance harness is committed and is explicitly non-executing/non-autonomous.
 - Dedicated isolated Railway Pilot boundary is provisioned and fail-closed; source deployment has not started.
+- Pilot supply-chain policy now requires exact same-head certification and immediate pre-deployment PR-head revalidation. A branch name or historical CI result is never deployment authorization.
 
-## Verified CI evidence
-At the last observed CI cycle before this evidence refresh:
-- Public Repository Release Guard run `34539135889`: **PASS**.
-- Pilot Control-Plane Gate run `34539135919`: **PASS**.
-- Artifact Intake Gate run `34539135943`: **FAIL**, as designed, because repository runtime ZIP copies remain truncated/corrupt.
-- Full Pilot Certification run `34539135897`: **FAIL/HOLD at exact release bytes + ZIP integrity**; downstream manifest/structure/compile/image/runtime/identity gates are blocked or skipped and must not be represented as failed observations.
+## Verified CI evidence — head b11ab7ddc70bb10f26347e326e1b504367bab0d2
+The complete observed CI cycle for this exact head is:
+- Public Repository Release Guard run `34542047623`: **PASS**.
+- Pilot Control-Plane Gate run `34542047395`: **PASS**.
+- Artifact Intake Gate run `34542047389`: **FAIL**, as designed, because repository runtime ZIP copies remain truncated/corrupt.
+- Full Pilot Certification run `34542047420`: **FAIL/HOLD at exact release bytes + ZIP integrity**; downstream manifest/structure/compile/image/runtime/identity gates remain blocked or unobserved and must not be represented as failed observations.
 
-Any later commit must earn these gates again; a historical PASS is evidence, not authorization for a newer head.
+This evidence is bound only to the exact head above. Any later commit must earn every mandatory gate again. Historical PASS results are evidence, not authorization for a newer head.
 
 ## Exact repository blocker
 Observed repository copies remain:
@@ -33,17 +34,18 @@ Required repair is deliberately narrow: replace only
 with the preserved exact approved bytes. **Do not modify `SHA256.txt` to match damaged bytes.**
 
 ## Gates already closed as implementation blockers
-The earlier gateway identity-perimeter, resource-guardrail, hosted-isolation, deployment-configuration, machine-readable-state, artifact-verifier, and control-plane-governance workstreams are no longer independent P0 implementation blockers. They remain subject to full CI and hosted re-verification after exact artifact repair.
+The gateway identity perimeter, resource guardrails, hosted isolation, deployment configuration, machine-readable state, artifact verifier, control-plane governance, promotion runbook, GO/HOLD matrix, and same-head supply-chain policy are no longer independent P0 implementation blockers. They remain subject to full CI and hosted re-verification after exact artifact repair.
 
 ## Promotion sequence
 1. Exact artifact repair.
 2. Artifact Intake Gate GREEN.
 3. Full Pilot Certification GREEN, including manifest, structure, syntax/compile, Docker build, integrated runtime/browser/API/security, and trusted identity fail-closed checks.
-4. Public Repository Release Guard GREEN and Pilot Control-Plane Gate GREEN on the same reviewed head.
-5. Deploy only to the isolated Railway Pilot boundary with `CRYPTOSPHERE_ASSETS_JSON=[]`.
-6. Hosted smoke/security acceptance with no external canary.
-7. Only after hosted acceptance, configure exactly one explicitly authorized public HTTPS:443 metadata-only canary and separately enable the canary switch.
-8. Review evidence and make an explicit human Pilot GO/HOLD decision before promotion is allowed.
+4. Public Repository Release Guard GREEN and Pilot Control-Plane Gate GREEN on the same exact reviewed head SHA.
+5. Immediately re-read PR #12 and prove its current head equals the certified SHA. Any movement means HOLD and recertify.
+6. Deploy only that certified revision to the isolated Railway Pilot boundary with `CRYPTOSPHERE_ASSETS_JSON=[]`.
+7. Prove deployed-revision provenance and run hosted smoke/security acceptance with no external canary.
+8. Only after hosted acceptance, configure exactly one explicitly authorized public HTTPS:443 metadata-only canary and separately enable the canary switch.
+9. Review evidence and make an explicit human Pilot GO/HOLD decision before promotion is allowed.
 
 ## Governance boundary
 - authority mode: `ADVISORY_ONLY`
@@ -51,5 +53,6 @@ The earlier gateway identity-perimeter, resource-guardrail, hosted-isolation, de
 - `autonomous_policy_change=false`
 - `autonomous_deployment=false`
 - `human_governance_required=true`
+- no silent authority increase
 
 Designed, Engineered, and Built by: Azad Ahmed — In Mission To Solve Intelligence At Civilizational Scale.
