@@ -52,17 +52,42 @@ Deployment `4b4e6be7-21b4-4ab0-83c1-ec4b5753fc88`
 - Deployment SUCCESS.
 - Replica result: 1 running / 0 crashed / 1 total.
 
+### Negative-path gate: adapter enabled with no token
+Deployment `69f4b73f-cb86-4b95-b076-3ed19d85f4b5`
+- `SCHWAB_TOS_ENABLED=true` with an empty access token.
+- Fail-closed assertions required `feed_gate=AUTH_REQUIRED`, `mode=AUTH_REQUIRED`, `auth=MISSING_ACCESS_TOKEN`, socket disconnected, proof unavailable, governed-review eligibility false, trading authority NONE.
+- `/api/v1/feed/proof` remained HTTP 425.
+- T0 promotion remained false and capital authority remained NONE.
+- Replica result: 1 running / 0 crashed / 1 total.
+
+### Negative-path gate: placeholder token with no approved streamer allowlist
+Deployment `2455a9d1-2721-4ca9-896e-67d4261f29e2`
+- Used a clearly non-credential placeholder solely to exercise the pre-network guard.
+- `SCHWAB_STREAM_HOST_ALLOWLIST` remained empty.
+- Fail-closed assertions required `feed_gate=AUTH_REQUIRED`, `mode=AUTH_REQUIRED`, `auth=STREAM_HOST_ALLOWLIST_REQUIRED`, socket disconnected, proof unavailable, governed-review eligibility false, trading authority NONE.
+- `/api/v1/feed/proof` remained HTTP 425.
+- The guard therefore stopped progression before an authentication or streamer connection attempt.
+- Replica result: 1 running / 0 crashed / 1 total.
+
+### Safe-baseline restoration
+Deployment `b768a214-132f-4b3f-a322-ef9f4492b90d`
+- Restored `SCHWAB_TOS_ENABLED=false`.
+- Restored empty `SCHWAB_ACCESS_TOKEN` and empty `SCHWAB_STREAM_HOST_ALLOWLIST`.
+- Re-ran the disabled-state self-certification.
+- Required `feed_gate=DISABLED`, `mode=DISABLED`, `auth=NOT_CONFIGURED`, proof unavailable, automatic live promotion false, T0 promotion false, and capital authority NONE.
+- Replica result: 1 running / 0 crashed / 1 total.
+
 ## Tooling caveat
-Railway's container-file inspection helper did not expose the `/tmp` files used by the startup process during the cold redeploy, despite the service remaining 1/1 resident. This helper result is not used as certification evidence. Certification is based on the fail-closed startup command, deployment success, and post-start replica residency. Any SHA, source-fetch, endpoint assertion, T0 lock, or authority assertion failure exits the process.
+Railway's container-file inspection helper did not expose the `/tmp` files used by the startup process during one cold-redeploy inspection, despite the service remaining 1/1 resident. This helper result is not used as certification evidence. Certification is based on the fail-closed startup command, deployment success, and post-start replica residency. Any SHA, source-fetch, endpoint assertion, T0 lock, or authority assertion failure exits the process.
 
 ## Certified conclusion
-The MarketSphere Schwab/TOS adapter software path is certified through the pre-credential boundary: source integrity, adapter import/start, server wrapper, fail-closed disabled state, proof withholding, governance contract, repeatable cold deployment, and zero trading authority.
+The MarketSphere Schwab/TOS adapter software path is certified through the pre-credential boundary: source integrity, adapter import/start, server wrapper, fail-closed disabled state, missing-token rejection, missing-host-allowlist rejection, proof withholding, governance contract, repeatable cold deployment, safe-baseline restoration, and zero trading authority.
 
 ## Explicitly NOT certified by this evidence
 The following require legitimate entitled source credentials and actual market-data observations and therefore remain open:
 - credential authentication;
 - account/feed entitlement verification;
-- authoritative streamer endpoint resolution and host allowlist confirmation;
+- authoritative streamer endpoint resolution and approved host allowlist confirmation;
 - login acknowledgement;
 - subscription acknowledgement;
 - first market-data evidence;
