@@ -11,7 +11,7 @@ This gate intentionally separates **service availability** from **production cer
 - [ ] Integrated Owner Console + Analytical Core runtime boots from source/artifacts without recovery-shell substitution.
 - [ ] `/health` and `/api/health` return expected product/version/mode and fail closed when either child runtime is unavailable.
 - [ ] Production boundary remains `ADVISORY_ONLY`; `production_execution=false`; `production_mutation=false`.
-- [ ] Gateway rejects mutation methods until a separately reviewed and signed human GO authorizes a new capability boundary.
+- [ ] Gateway permits only passive reads plus explicitly allowlisted, bounded non-mutating analytical/check capabilities; all unapproved or state-changing capabilities fail closed until a separately reviewed and signed human GO authorizes a new capability boundary.
 - [ ] One explicitly allowlisted public HTTPS:443 target is validated; unauthorized or unknown targets return 401/403/deny behavior as designed.
 - [ ] SSO/OIDC authentication and RBAC are enforced before privileged access.
 - [ ] MFA is enforced by the enterprise identity provider for privileged roles.
@@ -32,8 +32,10 @@ This gate intentionally separates **service availability** from **production cer
 - The original `cryptosphere-prod-20260907` Owner Console V1.4.1 cutover commit references Git blob `efeea8f328944b206a6e907248cf2d1efb2a28f4` for `cryptosphere-owner-runtime.zip`.
 - The original `cryptosphere-core-prod-20260907` Core V0.90.1 cutover commit references Git blob `3970a1f659d57089b0bdcd8d779dd06d87c577e4` for `cryptosphere-core-runtime.zip`.
 - Those are the same Git blob identities used by the current integrated package, so the historical cutover branches do **not** provide alternate known-good archive bytes.
+- A full reachable-history provenance hunt found no copy matching either manifest-approved SHA-256 identity. Continued blind search for a hidden Git copy is therefore closed as a primary recovery strategy.
+- Bounded forensic recovery identified complete CRC-verified source records, but the Owner archive truncates at `app.js` and the Core archive truncates during `capacity_robustness.py`.
 - Archive reconstruction/testing is forensic only. Reconstructed bytes must never be silently promoted, re-manifested, or treated as the approved release artifacts.
-- If the approved bytes cannot be recovered from an independently trusted source, the release must be rebuilt from authoritative source and assigned a new, explicitly reviewed release identity.
+- The primary recovery path is now: recover intact source evidence, reconstruct missing source from documented contracts, establish a source-first deterministic build, assign new reviewed release identities, and re-certify the integrated runtime.
 
 ## P1 — Production architecture target
 
@@ -49,14 +51,18 @@ This gate intentionally separates **service availability** from **production cer
 
 The PRIMETIME hardening branch keeps CryptoSphere deliberately bounded:
 
-- Read-only HTTP gateway methods only (`GET`, `HEAD`, `OPTIONS`).
-- Core forced to `ADVISORY_ONLY`.
+- Passive gateway methods are `GET`, `HEAD`, and `OPTIONS`.
+- `POST` is permitted only for exact, explicitly allowlisted non-mutating capabilities required by the existing product contract: Owner read-only allowlisted check (`/api/check`) and Core mission-proportional analysis (`/core/api/v1/renewal/mission-proportional`).
+- Allowed analytical/check request bodies are bounded; arbitrary POST routes and all unapproved/state-changing capabilities fail closed.
+- Core is forced to `ADVISORY_ONLY`.
 - No production execution or mutation authority.
 - No arbitrary scanning.
-- Proxy-chain identity headers from external callers are stripped before internal proxying.
+- External proxy-chain headers are stripped before internal proxying.
+- External CryptoSphere identity-assertion headers are stripped until a separately trusted SSO/identity-proxy boundary is integrated; privileged configured checks therefore fail closed rather than trust internet-supplied assertions.
 - Request IDs and structured audit events are generated without logging authorization or cookie values.
 - Child-process failure terminates the gateway so the hosting platform can restart the complete unit atomically.
 - Search-engine indexing is discouraged at the gateway.
+- Static PRIMETIME governance CI is independently separable from legacy artifact identity so a known-bad package cannot mask current control quality.
 
 ## Promotion rule
 
