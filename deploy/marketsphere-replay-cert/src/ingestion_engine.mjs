@@ -13,6 +13,17 @@ export class IngestionEngine {
     this.accepted = 0;
     this.rejected = 0;
     this.lastError = null;
+    this.initialized = false;
+  }
+
+  async initialize() {
+    if (this.initialized) return;
+    const verification = await this.historian.initialize();
+    this.continuity.hydrate(verification?.stream_tails ?? {});
+    for (const [streamKey, tail] of Object.entries(verification?.stream_tails ?? {})) {
+      if (tail?.passport_sha256) this.lastPassportByStream.set(streamKey, tail.passport_sha256);
+    }
+    this.initialized = true;
   }
 
   registerAdapter(manifest) {
@@ -20,6 +31,7 @@ export class IngestionEngine {
   }
 
   async ingest(adapterId, rawEvent) {
+    await this.initialize();
     const entry = this.registry.get(adapterId);
     if (!entry) {
       this.rejected += 1;
@@ -51,8 +63,10 @@ export class IngestionEngine {
       this.lastError = null;
       return {
         status: 'ACCEPTED_AS_EVIDENCE',
+        quality_gate: passport.quality_gate,
         event_sha256,
         passport_sha256: passport.passport_sha256,
+        prior_passport_sha256: passport.prior_passport_sha256,
         historian_chain_sha256: persisted.chain_sha256,
         continuity: passport.continuity,
         empirical_source_certified: false,
@@ -66,12 +80,13 @@ export class IngestionEngine {
     }
   }
 
-  async verify() { return this.historian.verifyFile(); }
+  async verify() { await this.initialize(); return this.historian.verifyFile(); }
   async flush() { return this.historian.flush(); }
 
   status() {
     return {
       ingestion_contract_version: 1,
+      initialized: this.initialized,
       accepted_events: this.accepted,
       rejected_events: this.rejected,
       last_error: this.lastError,
