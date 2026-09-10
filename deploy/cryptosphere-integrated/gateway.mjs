@@ -8,7 +8,7 @@ const CORE_PORT = 8001;
 const CORE_PYTHON = process.env.CORE_PYTHON || 'python3';
 const OWNER_DIR = process.env.CRYPTOSPHERE_OWNER_DIR || '/app/owner';
 const CORE_DIR = process.env.CRYPTOSPHERE_CORE_DIR || '/app/core';
-const VERSION = 'primetime-hardening-2026.09.10-r3';
+const VERSION = 'primetime-hardening-2026.09.10-r4';
 const PASSIVE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const SAFE_POST_PATHS = new Set([
   '/api/check',
@@ -106,6 +106,7 @@ function gatewayHeaders(res, requestId) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; form-action 'self'");
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
@@ -247,23 +248,8 @@ const server = http.createServer(async (req, res) => {
   const requestId = safeRequestId(req);
   const u = new URL(req.url || '/', 'http://gateway.local');
 
-  if (u.pathname === '/health' || u.pathname === '/api/health') return health(res, requestId);
-  if (u.pathname === '/health/live') {
-    return json(res, 200, {
-      status: 'live',
-      product: 'CryptoSphere',
-      gateway_version: VERSION,
-      production_execution: false,
-      production_mutation: false
-    }, requestId);
-  }
-  if (u.pathname === '/robots.txt') {
-    res.statusCode = 200;
-    gatewayHeaders(res, requestId);
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    return res.end('User-agent: *\nDisallow: /\n');
-  }
-
+  // Enforce the capability policy before special route handling so no method
+  // can bypass governance merely by targeting a health or metadata endpoint.
   const policy = requestPolicy(req.method, u.pathname);
   if (!policy.allowed) {
     audit('capability_blocked', {
@@ -279,6 +265,23 @@ const server = http.createServer(async (req, res) => {
       production_mutation: false,
       request_id: requestId
     }, requestId);
+  }
+
+  if (u.pathname === '/health' || u.pathname === '/api/health') return health(res, requestId);
+  if (u.pathname === '/health/live') {
+    return json(res, 200, {
+      status: 'live',
+      product: 'CryptoSphere',
+      gateway_version: VERSION,
+      production_execution: false,
+      production_mutation: false
+    }, requestId);
+  }
+  if (u.pathname === '/robots.txt') {
+    res.statusCode = 200;
+    gatewayHeaders(res, requestId);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.end('User-agent: *\nDisallow: /\n');
   }
 
   if (req.method === 'OPTIONS') {
