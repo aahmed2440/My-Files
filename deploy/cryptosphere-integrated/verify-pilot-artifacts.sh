@@ -37,5 +37,5 @@ grep -Fq "$OWNER_SHA  $OWNER" SHA256.txt || fail "manifest owner digest mismatch
 grep -Fq "$CORE_SHA  $CORE" SHA256.txt || fail "manifest core digest mismatch"
 pass "manifest binds exact approved bytes"
 
-printf '\nCRYPTOsphere PILOT ARTIFACT INTAKE: GREEN\n'
+printf '\nCryptoSphere PILOT ARTIFACT INTAKE: GREEN\n'
 printf 'No deployment or authority change was performed.\n'
