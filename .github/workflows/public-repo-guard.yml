@@ -3,7 +3,9 @@ name: Public Repository Release Guard
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - cryptosphere/pilot-hardening-2026-09-09
   workflow_dispatch:
 
 permissions:
@@ -113,4 +115,5 @@ jobs:
             echo '- High-confidence tracked-text secret scan: PASS'
             echo '- New deploy/runtime archives: PASS'
             echo '- Action dependency: immutable full commit SHA'
+            echo '- Runs on Pilot-branch pushes so Railway Wait for CI can observe this gate.'
           } >> "$GITHUB_STEP_SUMMARY"
