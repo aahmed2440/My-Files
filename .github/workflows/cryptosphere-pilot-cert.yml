@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - cryptosphere/pilot-hardening-2026-09-09
   workflow_dispatch:
 
 permissions:
@@ -20,7 +23,7 @@ env:
 jobs:
   certify:
     name: Verify release bytes and integrated runtime
-    if: startsWith(github.head_ref, 'cryptosphere/')
+    if: github.event_name == 'push' || startsWith(github.head_ref, 'cryptosphere/')
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -231,8 +234,8 @@ jobs:
           {
             echo '## CryptoSphere Pilot Certification'
             echo
-            echo '- Checks out and verifies the exact PR head candidate SHA, not the synthetic PR merge ref.'
-            echo '- Runs on every CryptoSphere PR head targeting main so runtime certification is bound to the exact candidate revision.'
+            echo '- Checks out and verifies the exact candidate SHA for both PR and Pilot-branch push events.'
+            echo '- Supports Railway Wait for CI without weakening same-head runtime certification.'
             echo '- Exact Owner/Core repository hashes printed before manifest enforcement'
             echo '- ZIP integrity checked before trusting the manifest'
             echo '- Release manifest must match exact repository bytes'
