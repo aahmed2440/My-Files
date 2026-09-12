@@ -1,0 +1,58 @@
+name: CryptoSphere — Artifact Intake Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - cryptosphere/pilot-hardening-2026-09-09
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  artifact-intake:
+    name: Exact approved Pilot artifacts
+    if: github.event_name == 'push' || startsWith(github.head_ref, 'cryptosphere/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind workspace to candidate SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
+          echo "Candidate SHA binding: ${ACTUAL_SHA}"
+
+      - name: Verify approved bytes, digests, ZIPs, and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash deploy/cryptosphere-integrated/verify-pilot-artifacts.sh
+
+      - name: Record authority boundary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## CryptoSphere Artifact Intake Gate'
+            echo
+            echo '- Checks out and verifies the exact candidate SHA for both PR and Pilot-branch push events.'
+            echo '- Supports Railway Wait for CI without weakening same-head certification.'
+            echo '- Exact approved byte counts are enforced before runtime certification.'
+            echo '- Exact SHA-256 digests are enforced.'
+            echo '- ZIP integrity is enforced.'
+            echo '- SHA256.txt must bind the approved bytes.'
+            echo '- The manifest is never rewritten to bless mismatched artifacts.'
+            echo '- This gate performs no deployment, promotion, external contact, production mutation, or authority increase.'
+          } >> "$GITHUB_STEP_SUMMARY"

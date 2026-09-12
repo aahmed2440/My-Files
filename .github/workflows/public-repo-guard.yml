@@ -3,7 +3,9 @@ name: Public Repository Release Guard
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - cryptosphere/pilot-hardening-2026-09-09
   workflow_dispatch:
 
 permissions:
@@ -13,10 +15,21 @@ jobs:
   public-release-gate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout immutable source
+      - name: Checkout exact candidate source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+
+      - name: Bind workspace to candidate SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
+          echo "Candidate SHA binding: ${ACTUAL_SHA}"
 
       - name: Reject dangerous tracked filenames
         shell: bash
@@ -97,8 +110,10 @@ jobs:
         run: |
           {
             echo '## Public Repository Release Guard'
+            echo '- Exact candidate SHA binding: PASS'
             echo '- Dangerous tracked filenames: PASS'
             echo '- High-confidence tracked-text secret scan: PASS'
             echo '- New deploy/runtime archives: PASS'
             echo '- Action dependency: immutable full commit SHA'
+            echo '- Runs on Pilot-branch pushes so Railway Wait for CI can observe this gate.'
           } >> "$GITHUB_STEP_SUMMARY"

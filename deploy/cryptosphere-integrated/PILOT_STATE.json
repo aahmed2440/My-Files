@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "program": "CryptoSphere",
+  "stage": "PILOT",
+  "disposition": "HOLD",
+  "as_of_utc": "2026-09-10T23:13:00Z",
+  "branch": "cryptosphere/pilot-hardening-2026-09-09",
+  "authority": {
+    "mode": "ADVISORY_ONLY",
+    "production_execution": false,
+    "autonomous_policy_change": false,
+    "autonomous_deployment": false,
+    "human_governance_required": true
+  },
+  "gates": {
+    "public_repository_release_guard": "PASS",
+    "pilot_control_plane": "PASS",
+    "exact_release_bytes_and_zip_integrity": "FAIL",
+    "release_manifest": "BLOCKED",
+    "package_structure": "BLOCKED",
+    "static_compile": "BLOCKED",
+    "integrated_image_build": "BLOCKED",
+    "integrated_runtime": "BLOCKED",
+    "trusted_identity_perimeter": "BLOCKED",
+    "railway_pilot_deployment": "NOT_STARTED",
+    "hosted_acceptance": "NOT_STARTED",
+    "external_canary": "DISABLED",
+    "human_go_hold": "HOLD"
+  },
+  "artifact_requirements": {
+    "owner_runtime_sha256": "6d58d4023eedbf319a162f15541628c512acb9751a06d47dcc049d5d988dd146",
+    "owner_runtime_size_bytes": 27977,
+    "core_runtime_sha256": "bc2c527f358174715b569c32f10d9a28f85d8d8724fcbae407963c9922a1b997",
+    "core_runtime_size_bytes": 95596,
+    "repository_owner_runtime_size_bytes_observed": 7509,
+    "repository_core_runtime_size_bytes_observed": 15008,
+    "repository_history_contains_intact_runtime_copy": false,
+    "manifest_must_not_be_changed_to_match_bad_bytes": true
+  },
+  "railway_boundary": {
+    "project_id": "d97e67d0-aa94-43f1-b727-d63deadecbf0",
+    "environment_id": "813e5b56-edf8-413a-9725-47732474d61f",
+    "service_id": "7c0e7b73-2e9b-41e0-9f78-4df4e9b0a52d",
+    "source_deployment_started": false,
+    "public_domain_enabled": false,
+    "external_canary_allowed": false,
+    "promotion_allowed": false
+  },
+  "evidence": {
+    "last_verified_release_guard_run": 34539135889,
+    "last_verified_control_plane_run": 34539135919,
+    "last_verified_artifact_intake_run": 34539135943,
+    "last_verified_pilot_certification_run": 34539135897,
+    "readiness_record": "PILOT_READINESS_2026-09-09.md",
+    "go_hold_matrix": "PILOT_GO_HOLD_MATRIX_2026-09-10.md"
+  },
+  "next_transition": "Replace both repository runtime ZIPs with the exact approved bytes, then require Artifact Intake, full Pilot Certification, Release Guard, and Pilot Control-Plane Gate to pass on the same reviewed head before any isolated Railway source deployment.",
+  "attribution": "Designed, Engineered, and Built by: Azad Ahmed — In Mission To Solve Intelligence At Civilizational Scale."
+}
